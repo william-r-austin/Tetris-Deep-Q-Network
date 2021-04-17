@@ -1,5 +1,7 @@
 # Byte-compiled / optimized / DLL files
-*__pycache__/
+*/__pycache__/
+src/cs747/__pycache__/
+src/cs747/sim/__pycache__/
 *.py[cod]
 *$py.class
 
