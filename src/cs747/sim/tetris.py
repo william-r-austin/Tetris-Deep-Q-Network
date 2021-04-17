@@ -46,14 +46,18 @@ class Tetris:
 
     #actionFunctions = {"MOVE_LEFT": self.moveLeft}
 
-    def __init__(self, height=20, width=10):
+    def __init__(self, height=20, width=10, render_flag=False, block_size=30):
         #, block_size=20):
         self.height = height
         self.width = width
-        #self.block_size = block_size
-        #self.extra_board = np.ones((self.height * self.block_size, self.width * int(self.block_size / 2), 3),
-        #                           dtype=np.uint8) * np.array([204, 204, 255], dtype=np.uint8)
-        #self.text_color = (200, 20, 220)
+        self.render_flag = render_flag
+        
+        if render_flag:
+            self.block_size = block_size
+            self.extra_board = np.ones((self.height * self.block_size, self.width * int(self.block_size / 2), 3), 
+                                       dtype=np.uint8) * np.array([204, 204, 255], dtype=np.uint8)
+            self.text_color = (200, 20, 220)
+        
         self.reset()
 
     def reset(self):
@@ -321,6 +325,10 @@ class Tetris:
         else:
             self.piece = next_piece
             self.current_pos = next_pos
+        
+        
+        if self.render_flag:
+            self.render()
         
         #return move_score, self.gameover, is_piece_finalized
         return result_map

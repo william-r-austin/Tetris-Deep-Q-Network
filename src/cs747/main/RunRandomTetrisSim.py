@@ -8,10 +8,10 @@ import random
 
 if __name__ == '__main__':
     possible_actions = ["MOVE_LEFT", "MOVE_RIGHT", "MOVE_DOWN", "DROP", "ROTATE_CLOCKWISE", "ROTATE_COUNTERCLOCKWISE"]
-    tetrisSim = Tetris()
+    tetrisSim = Tetris(render_flag=True)
     game_number = 1
     
-    while game_number <= 1000:
+    while game_number <= 100:
         print("\nStarting new Tetris Game #" + str(game_number))
         
         action_count = 0
