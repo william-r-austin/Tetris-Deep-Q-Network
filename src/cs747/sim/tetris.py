@@ -43,8 +43,10 @@ class Tetris:
         [[7, 0, 0],
          [7, 7, 7]]
     ]
-
-    #actionFunctions = {"MOVE_LEFT": self.moveLeft}
+    
+    # If the agent choose to just spin or move the block left/right continuously, we should automatically
+    # move it down after a while to prevent infinite loops
+    max_sideways_moves = 8
 
     def __init__(self, height=20, width=10, render_flag=False, block_size=30):
         #, block_size=20):
@@ -58,13 +60,29 @@ class Tetris:
                                        dtype=np.uint8) * np.array([204, 204, 255], dtype=np.uint8)
             self.text_color = (200, 20, 220)
         
+        self.create_actions()
+        
         self.reset()
+
+    def create_actions(self):
+        self.actions = {"MOVE_LEFT": lambda: self.moveLeft(), 
+                        "MOVE_RIGHT" : lambda: self.moveRight(), 
+                        "MOVE_DOWN": lambda: self.moveDown(), 
+                        "DROP": lambda: self.drop(), 
+                        "ROTATE_CLOCKWISE": lambda: self.rotate_clockwise(), 
+                        "ROTATE_COUNTERCLOCKWISE": lambda: self.rotate_counter_clockwise()}
+        
+        self.action_names = list(self.actions.keys())
+
+    def get_action_names(self):
+        return self.action_names
 
     def reset(self):
         self.board = [[0] * self.width for _ in range(self.height)]
         self.score = 0
         self.tetrominoes = 0
         self.cleared_lines = 0
+        self.sideways_moves_count = 0
         self.bag = list(range(len(self.pieces)))
         random.shuffle(self.bag)
         self.ind = self.bag.pop()
@@ -175,9 +193,6 @@ class Tetris:
             self.gameover = True
 
     def check_collision(self, piece, pos):
-        
-        
-        
         #future_y = pos["y"] + 1
         for y in range(len(piece)):
             for x in range(len(piece[y])):
@@ -238,26 +253,48 @@ class Tetris:
             board = [[0 for _ in range(self.width)]] + board
         return board
     
-    def doAction(self, actionName):
-        resultMap = None
-        
-        if actionName == "MOVE_LEFT":
-            resultMap = self.moveLeft()
-        elif actionName == "MOVE_RIGHT":
-            resultMap = self.moveRight()
-        elif actionName == "MOVE_DOWN":
-            resultMap = self.moveDown()
-        elif actionName == "DROP":
-            resultMap = self.drop()
-        elif actionName == "ROTATE_CLOCKWISE":
-            resultMap = self.rotateClockwise()
-        elif actionName == "ROTATE_COUNTERCLOCKWISE":
-            resultMap = self.rotateCounterClockwise()
+    def do_action_by_id(self, action_id):
+        result_map = None
+        if action_id >= 0 and action_id < len(self.action_names):
+            action_name = self.action_names[action_id]
+            action_function = self.actions[action_name]
+            result_map = action_function()
         else:
             print("Invalid move received.")
-            resultMap = {}
+            result_map = {}
         
-        return resultMap
+        return result_map
+            
+    
+    def do_action_by_name(self, action_name):
+        result_map = None
+        '''
+        if actionName == "MOVE_LEFT":
+            resultMap = self.moveLeft()
+            
+        elif actionName == "MOVE_RIGHT":
+            resultMap = self.moveRight()
+            
+        elif actionName == "MOVE_DOWN":
+            resultMap = self.moveDown()
+            
+        elif actionName == "DROP":
+            resultMap = self.drop()
+            
+        elif actionName == "ROTATE_CLOCKWISE":
+            resultMap = self.rotate_clockwise()
+            
+        elif actionName == "ROTATE_COUNTERCLOCKWISE":
+            resultMap = self.rotate_counter_clockwise()
+        '''
+        if action_name in self.action_names:
+            action_function = self.actions[action_name]
+            result_map = action_function()
+        else:
+            print("Invalid move received.")
+            result_map = {}
+        
+        return result_map
     
     def moveLeft(self):
         next_pos = {"x": self.current_pos["x"] - 1, "y": self.current_pos["y"]}
@@ -278,19 +315,19 @@ class Tetris:
         
         return move_down_result
     
-    def rotateClockwise(self):
+    def rotate_clockwise(self):
         next_piece = self.rotate(self.piece)
         return self.executeMove(self.current_pos, next_piece, False)
     
-    def rotateCounterClockwise(self):
+    def rotate_counter_clockwise(self):
         next_piece = self.rotateCC(self.piece)
         return self.executeMove(self.current_pos, next_piece, False)
     
     def finalize_piece(self):
         self.board = self.store(self.piece, self.current_pos)
         lines_cleared, self.board = self.check_cleared_rows(self.board)
-        score = 1 + (lines_cleared ** 2) * self.width
-        self.score += score
+        reward = 1 + (lines_cleared ** 2) * self.width
+        
         self.tetrominoes += 1
         self.cleared_lines += lines_cleared
         
@@ -298,9 +335,11 @@ class Tetris:
         
         # The gameover flag is set by new_piece()
         if self.gameover:
-            self.score -= 2
+            reward -= 2
+        
+        self.score += reward
             
-        return score
+        return reward
     
     
     """
@@ -308,12 +347,36 @@ class Tetris:
     """
     def executeMove(self, next_pos, next_piece, is_down_move):
         move_collision = self.check_collision(next_piece, next_pos)
-        result_map = {"score": 0, "gameover": False, "finalized": False}
+        result_map = {"reward": 0, "gameover": False, "finalized": False}
+
+        if is_down_move:
+            self.sideways_moves_count = 0
+            
+            if move_collision:
+                move_reward = self.finalize_piece()
+                result_map["reward"] = move_reward
+                result_map["gameover"] = self.gameover
+                result_map["finalized"] = True
+            else:
+                self.piece = next_piece
+                self.current_pos = next_pos
+        else:
+            self.sideways_moves_count += 1
+            
+            # If we have a collision OR exceeded the sideways move limit, then
+            # just move the block down. Otherwise, move the block to the new location
+            if move_collision or self.sideways_moves_count > self.max_sideways_moves:
+                result_map = self.moveDown()
+            else:
+                self.piece = next_piece
+                self.current_pos = next_pos
                 
+        '''        
         if move_collision:
+            self.sideways_moves_count = 0
             if is_down_move:
-                move_score = self.finalize_piece()
-                result_map["score"] = move_score
+                move_reward = self.finalize_piece()
+                result_map["reward"] = move_reward
                 result_map["gameover"] = self.gameover
                 result_map["finalized"] = True
             else:
@@ -325,7 +388,15 @@ class Tetris:
         else:
             self.piece = next_piece
             self.current_pos = next_pos
-        
+            
+            if is_down_move:
+                self.sideways_moves_count = 0
+            else:
+                self.sideways_moves_count += 1
+                
+                if self.sideways_moves_count >= self.max_sideways_moves:
+                    result_map = self.moveDown()
+        '''
         
         if self.render_flag:
             self.render()
