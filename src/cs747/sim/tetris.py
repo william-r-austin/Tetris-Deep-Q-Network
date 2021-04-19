@@ -82,6 +82,7 @@ class Tetris:
         self.score = 0
         self.tetrominoes = 0
         self.cleared_lines = 0
+        self.action_count = 0
         self.sideways_moves_count = 0
         self.bag = list(range(len(self.pieces)))
         random.shuffle(self.bag)
@@ -259,6 +260,7 @@ class Tetris:
             action_name = self.action_names[action_id]
             action_function = self.actions[action_name]
             result_map = action_function()
+            self.action_count += 1
         else:
             print("Invalid move received.")
             result_map = {}
@@ -290,6 +292,7 @@ class Tetris:
         if action_name in self.action_names:
             action_function = self.actions[action_name]
             result_map = action_function()
+            self.action_count += 1
         else:
             print("Invalid move received.")
             result_map = {}

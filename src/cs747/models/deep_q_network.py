@@ -27,9 +27,9 @@ class DeepQNetwork(nn.Module):
 
         return x
 
-class DeepQNetworkV2(nn.Module):
+class DeepQNetworkAtari(nn.Module):
     def __init__(self, num_frames, num_actions):
-        super(DeepQNetworkV2, self).__init__()
+        super(DeepQNetworkAtari, self).__init__()
         self.num_frames = num_frames
         self.num_actions = num_actions
         

@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-from cs747.models.deep_q_network import DeepQNetworkV2
+from cs747.models.deep_q_network import DeepQNetworkAtari
 from cs747.util.experience_replay import ReplayMemory
 from cs747.sim.tetris import Tetris
 from collections import deque
@@ -70,7 +70,7 @@ def train(opt):
     
     env = Tetris(width=opt.width, height=opt.height, block_size=opt.block_size)
     action_names = env.get_action_names()
-    model = DeepQNetworkV2(4, len(action_names))
+    model = DeepQNetworkAtari(4, len(action_names))
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
     criterion = nn.MSELoss()
 
@@ -121,11 +121,12 @@ def train(opt):
             
             action_result_map = env.do_action_by_id(action_index)
             is_game_over = action_result_map["gameover"]
+            reward = action_result_map["reward"]
             
             next_state = env.get_current_board_state()
             next_tensor = get_tensor_for_state(next_state)
             
-            current_move_result = TetrisMoveResult(current_state, current_tensor, action_index, action_result_map["reward"], is_game_over, next_state, next_tensor)
+            current_move_result = TetrisMoveResult(current_state, current_tensor, action_index, reward, is_game_over, next_state, next_tensor)
             game_move_results.append(current_move_result)
             
             current_state = next_state
