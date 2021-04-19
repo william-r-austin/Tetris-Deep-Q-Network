@@ -15,7 +15,11 @@ def to_dqn_84x84(tetris_board):
         for target_col in range(target_size):
             src_row = int(target_row * height / target_size)
             src_col = int(target_col * width / target_size)
-            frame_tensor[target_row, target_col] = tetris_board[src_row][src_col]
+            src_value = tetris_board[src_row][src_col]
+            if src_value != 0:
+                src_value = 1 if src_value > 0 else -1
+            
+            frame_tensor[target_row, target_col] = src_value
     #print("Frame tensor shape")
     #print(frame_tensor.size())
     

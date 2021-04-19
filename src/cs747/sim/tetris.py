@@ -179,7 +179,7 @@ class Tetris:
         board = [x[:] for x in self.board]
         for y in range(len(self.piece)):
             for x in range(len(self.piece[y])):
-                board[y + self.current_pos["y"]][x + self.current_pos["x"]] = self.piece[y][x]
+                board[y + self.current_pos["y"]][x + self.current_pos["x"]] = -1 * self.piece[y][x]
         return board
 
     def new_piece(self):
