@@ -9,6 +9,7 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
+import time
 
 from cs747.vanilla_dqn_v4.dqn_model import DeepQNetworkAtari
 from cs747.vanilla_dqn_v4.experience_replay import ReplayMemory
@@ -41,6 +42,9 @@ class TrainVanillaDqnV4(object):
             for cuda_object in cuda_objects:
                 cuda_object.cuda()
     
+    def get_current_time_ms(self):
+        return round(time.time() * 1000)
+    
     '''
         Epsilon is the probability of taking a random action (explore).
         Otherwise, we will act according to the model output (exploit).
@@ -68,11 +72,11 @@ class TrainVanillaDqnV4(object):
     
     def print_game_complete(self):
         if self.replay_memory_full:
-            print("    Tetris game completed. Training Episode: {}, Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Epsilon: {:.6f}\n"
-                  .format(self.episode, self.game_id, self.env.score, self.env.tetrominoes, self.env.cleared_lines, self.epsilon))
+            print("    Tetris game completed. Training Episode: {}, Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.6f}\n"
+                  .format(self.episode, self.game_id, self.env.score, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon))
         else:
-            print("    Tetris setup game completed. Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Experience Replay Progress: {}/{}\n"
-                  .format(self.game_id, self.env.score, self.env.tetrominoes, self.env.cleared_lines, self.replay_memory.get_size(), self.opt.replay_memory_size))
+            print("    Tetris setup game completed. Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}\n"
+                  .format(self.game_id, self.env.score, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size))
     
     def print_epoch_complete(self, random_action, action_index, loss_value):
         action_type = "EXPLORE" if random_action else "EXPLOIT"
@@ -104,7 +108,7 @@ class TrainVanillaDqnV4(object):
         self.model.eval()
         with torch.no_grad():
             next_q_values_full = self.model(next_state_batch).to(self.torch_device)
-            next_q_values = torch.max(next_q_values_full, 1).to(self.torch_device).values
+            next_q_values = torch.max(next_q_values_full, 1).values
         self.model.train()
         
         q_values_full = self.model(state_batch).to(self.torch_device)
@@ -144,6 +148,7 @@ class TrainVanillaDqnV4(object):
         self.criterion = nn.MSELoss()
         self.replay_memory = ReplayMemory(frame_limit=self.opt.replay_memory_size)
         self.replay_memory_full = False
+        self.game_time_ms = 0
         self.epsilon = 1
         self.epoch = 1
         self.game_id = 1
@@ -161,6 +166,7 @@ class TrainVanillaDqnV4(object):
             self.set_epsilon_for_episode()
             current_state = self.env.get_current_board_state()
             current_tensor = self.get_tensor_for_state(current_state).to(self.torch_device)
+            start_time_ms = self.get_current_time_ms()
             #self.add_to_cuda(current_tensor)
              
             while not is_game_over:
@@ -199,6 +205,8 @@ class TrainVanillaDqnV4(object):
                     self.epoch += 1
                         
             self.replay_memory.insert(game_move_results, self.game_id)
+            end_time_ms = self.get_current_time_ms()
+            self.game_time_ms = end_time_ms - start_time_ms
             self.print_game_complete()
             
             # If we are training, update the episode. Otherwise, check
