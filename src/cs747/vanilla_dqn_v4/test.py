@@ -20,9 +20,20 @@ from cs747.vanilla_dqn_v4.tetris_move_result import TetrisMoveResult
 from cs747.vanilla_dqn_v4 import format_util
 
 
+def get_args():
+    parser = argparse.ArgumentParser("""Test Tetris model""")
+    parser.add_argument("--load_path", type=str, default="trained_models")
+
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
-    model = torch.load("C:/Users/William/eclipse-workspace-cs747/Tetris-Deep-Q-Network/src/cs747/main/trained_models/tetris_30000")
+    run_options = get_args()
+    model = torch.load("{}".format(run_options.load_path))
     model.eval()
+
+    torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
     env = Tetris()
     action_names = env.get_action_names()
@@ -36,7 +47,7 @@ if __name__ == "__main__":
             current_state = format_util.to_dqn_84x84(board)
             
             with torch.no_grad():
-                input_tensor = torch.unsqueeze(current_state, 0)
+                input_tensor = torch.unsqueeze(current_state, 0).to(torch_device)
                 predictions = model(input_tensor)
                 action_index = torch.argmax(predictions)
                 env.do_action_by_id(action_index)
