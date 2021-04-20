@@ -130,13 +130,24 @@ class TrainVanillaDqnV4(object):
         self.optimizer.step()
         
         return loss.item()
+    
+    def print_run_config(self):
+        print("=================================================")
+        print("Starting Training for Tetris with Deep-Q-Networks")
+        print("Run Key is: " + self.run_time_str)
+        print("Training File is: " + str(__file__))
+        print("\nArguments from command line are below:")
+        for k, v in vars(run_options).items():
+            print(f"{k} = {v}")
         
-        
-        
+        print("===============================================\n")
     
     def train(self):
         self.run_time = datetime.now()
         self.run_time_str = self.run_time.strftime("%b%d_%H%M%S")
+        
+        self.print_run_config()
+        
         self.torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         
         self.initialize_torch_random()
@@ -144,7 +155,7 @@ class TrainVanillaDqnV4(object):
         self.env = Tetris()
         self.action_names = self.env.get_action_names()
         self.model = DeepQNetworkAtari(4, len(self.action_names)).to(self.torch_device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.lr)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
         self.criterion = nn.MSELoss()
         self.replay_memory = ReplayMemory(frame_limit=self.opt.replay_memory_size)
         self.replay_memory_full = False
@@ -153,8 +164,6 @@ class TrainVanillaDqnV4(object):
         self.epoch = 1
         self.game_id = 1
         self.episode = 1
-        
-
         
         #self.add_to_cuda(self.model)
         
@@ -224,16 +233,16 @@ class TrainVanillaDqnV4(object):
 def get_args():
     parser = argparse.ArgumentParser(
         """Implementation of Deep Q Network to play Tetris""")
-    parser.add_argument("--width", type=int, default=10, help="The common width for all images")
-    parser.add_argument("--height", type=int, default=20, help="The common height for all images")
+    parser.add_argument("--board_width", type=int, default=10, help="The tetris board width")
+    parser.add_argument("--board_height", type=int, default=20, help="The tetris board height")
     parser.add_argument("--block_size", type=int, default=30, help="Size of a block")
-    parser.add_argument("--batch_size", type=int, default=32, help="The number of images per batch")
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--batch_size", type=int, default=32, help="The number of samples per batch")
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--initial_epsilon", type=float, default=1)
     parser.add_argument("--final_epsilon", type=float, default=1e-3)
-    parser.add_argument("--num_decay_epochs", type=float, default=2000)
-    parser.add_argument("--num_epochs", type=int, default=3000)
+    #parser.add_argument("--num_decay_epochs", type=float, default=2000)
+    #parser.add_argument("--num_epochs", type=int, default=3000)
     parser.add_argument("--num_decay_episodes", type=int, default=2000)
     parser.add_argument("--num_episodes", type=int, default=2500)
     parser.add_argument("--save_interval", type=int, default=20) # This is a number of EPISODES
@@ -246,7 +255,6 @@ def get_args():
     return args
 
 if __name__ == "__main__":
-    print(__file__)
     run_options = get_args()
     trainDQN = TrainVanillaDqnV4(run_options)
     trainDQN.train()
