@@ -9,7 +9,6 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
 
 from cs747.vanilla_dqn_v4.dqn_model import DeepQNetworkAtari
 from cs747.vanilla_dqn_v4.experience_replay import ReplayMemory
@@ -32,7 +31,6 @@ class TrainVanillaDqnV4(object):
         if os.path.isdir(self.opt.log_path):
             shutil.rmtree(self.opt.log_path)
         os.makedirs(self.opt.log_path)
-        writer = SummaryWriter(self.opt.log_path)
         
         if os.path.isdir(self.opt.saved_path):
             shutil.rmtree(self.opt.saved_path)
@@ -70,15 +68,18 @@ class TrainVanillaDqnV4(object):
     
     def print_game_complete(self):
         if self.replay_memory_full:
-            print("    Tetris game completed. Training Episode: {}, Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Epsilon: {}\n"
+            print("    Tetris game completed. Training Episode: {}, Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Epsilon: {:.6f}\n"
                   .format(self.episode, self.game_id, self.env.score, self.env.tetrominoes, self.env.cleared_lines, self.epsilon))
         else:
             print("    Tetris setup game completed. Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Experience Replay Progress: {}/{}\n"
                   .format(self.game_id, self.env.score, self.env.tetrominoes, self.env.cleared_lines, self.replay_memory.get_size(), self.opt.replay_memory_size))
     
-    def print_epoch_complete(self):
-        print("    Episode: {}, Epoch: {}, Game ID: {}, Action Count: {}, Score: {}, Tetrominoes {}, Cleared lines: {}"
-              .format(self.episode, self.epoch, self.game_id, self.env.action_count, self.env.score, self.env.tetrominoes, self.env.tetrominoes))
+    def print_epoch_complete(self, random_action, action_index, loss_value):
+        action_type = "EXPLORE" if random_action else "EXPLOIT"
+        action_name = self.action_names[action_index]
+        
+        print("    Episode: {}, Epoch: {}, Game ID: {}, Action Count: {}, Loss: {:.6f}, Score: {}, Tetrominoes {}, Cleared lines: {}, Action Type: {}, Action Name: {}"
+              .format(self.episode, self.epoch, self.game_id, self.env.action_count, loss_value, self.env.score, self.env.tetrominoes, self.env.cleared_lines, action_type, action_name))
         #writer.add_scalar('Train/Score', final_score, epoch - 1)
         #writer.add_scalar('Train/Tetrominoes', final_tetrominoes, epoch - 1)
         #writer.add_scalar('Train/Cleared lines', final_cleared_lines, epoch - 1)    
@@ -122,9 +123,9 @@ class TrainVanillaDqnV4(object):
         self.optimizer.zero_grad()
         loss = self.criterion(q_values, y_batch)
         loss.backward()
-        print(loss.item())
-        
         self.optimizer.step()
+        
+        return loss.item()
         
         
         
@@ -172,7 +173,7 @@ class TrainVanillaDqnV4(object):
                 if random_action:
                     action_index = randrange(len(self.action_names))
                 else:
-                    action_index = self.get_action_index_from_model()
+                    action_index = self.get_action_index_from_model(current_tensor)
                 
                 action_result_map = self.env.do_action_by_id(action_index)
                 is_game_over = action_result_map["gameover"]
@@ -189,8 +190,8 @@ class TrainVanillaDqnV4(object):
                 current_tensor = next_tensor
                 
                 if self.replay_memory_full:
-                    self.do_minibatch_update()
-                    self.print_epoch_complete(random_action, action_index)
+                    loss_value = self.do_minibatch_update()
+                    self.print_epoch_complete(random_action, action_index, loss_value)
                     
                     if self.episode % self.opt.save_interval == 0:
                         torch.save(self.model, "{}/tetris_{}".format(self.opt.saved_path, self.episode))
