@@ -89,36 +89,36 @@ class TrainVanillaDqnV4(object):
 
     def do_minibatch_update(self):
         batch = self.replay_memory.get_random_sample(self.opt.batch_size)
-        state_batch = torch.stack(tuple(sample.begin_tensor for sample in batch))
-        next_state_batch = torch.stack(tuple(sample.next_tensor for sample in batch))
+        state_batch = torch.stack(tuple(sample.begin_tensor for sample in batch)).to(self.torch_device)
+        next_state_batch = torch.stack(tuple(sample.next_tensor for sample in batch)).to(self.torch_device)
         
-        self.add_to_cuda(state_batch, next_state_batch)
+        #self.add_to_cuda(state_batch, next_state_batch)
         
         reward_list = [sample.reward for sample in batch]
         game_active_list = [(0 if sample.final_state_flag else 1) for sample in batch]
-        reward_tensor = torch.tensor(reward_list)
-        game_active_tensor = torch.tensor(game_active_list)
+        reward_tensor = torch.tensor(reward_list).to(self.torch_device)
+        game_active_tensor = torch.tensor(game_active_list).to(self.torch_device)
     
-        self.add_to_cuda(reward_tensor, game_active_tensor)
+        #self.add_to_cuda(reward_tensor, game_active_tensor)
     
         self.model.eval()
         with torch.no_grad():
-            next_q_values_full = self.model(next_state_batch)
-            next_q_values = torch.max(next_q_values_full, 1).values
+            next_q_values_full = self.model(next_state_batch).to(self.torch_device)
+            next_q_values = torch.max(next_q_values_full, 1).to(self.torch_device).values
         self.model.train()
         
-        q_values_full = self.model(state_batch)
-        q_values = torch.amax(q_values_full, 1)
+        q_values_full = self.model(state_batch).to(self.torch_device)
+        q_values = torch.amax(q_values_full, 1).to(self.torch_device)
         
-        self.add_to_cuda(q_values)
+        #self.add_to_cuda(q_values)
         
         y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) for reward, game_active_ind, next_q_value in
                   zip(reward_tensor, game_active_tensor, next_q_values))
         
-        y_batch_init = torch.cat(y_batch_list)
-        y_batch = torch.reshape(y_batch_init, (-1,))
+        y_batch_init = torch.cat(y_batch_list).to(self.torch_device)
+        y_batch = torch.reshape(y_batch_init, (-1,)).to(self.torch_device)
         
-        self.add_to_cuda(y_batch)
+        #self.add_to_cuda(y_batch)
     
         self.optimizer.zero_grad()
         loss = self.criterion(q_values, y_batch)
@@ -133,12 +133,13 @@ class TrainVanillaDqnV4(object):
     def train(self):
         self.run_time = datetime.now()
         self.run_time_str = self.run_time.strftime("%b%d_%H%M%S")
+        self.torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         
         self.initialize_torch_random()
         self.create_output_directories()
         self.env = Tetris()
         self.action_names = self.env.get_action_names()
-        self.model = DeepQNetworkAtari(4, len(self.action_names))
+        self.model = DeepQNetworkAtari(4, len(self.action_names)).to(self.torch_device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.lr)
         self.criterion = nn.MSELoss()
         self.replay_memory = ReplayMemory(frame_limit=self.opt.replay_memory_size)
@@ -150,7 +151,7 @@ class TrainVanillaDqnV4(object):
         
 
         
-        self.add_to_cuda(self.model)
+        #self.add_to_cuda(self.model)
         
         while self.episode <= self.opt.num_episodes:
             self.env.reset()
@@ -159,8 +160,8 @@ class TrainVanillaDqnV4(object):
             game_move_results = []
             self.set_epsilon_for_episode()
             current_state = self.env.get_current_board_state()
-            current_tensor = self.get_tensor_for_state(current_state)
-            self.add_to_cuda(current_tensor)
+            current_tensor = self.get_tensor_for_state(current_state).to(self.torch_device)
+            #self.add_to_cuda(current_tensor)
              
             while not is_game_over:
                 random_action = True
@@ -180,8 +181,8 @@ class TrainVanillaDqnV4(object):
                 reward = action_result_map["reward"]
                 
                 next_state = self.env.get_current_board_state()
-                next_tensor = self.get_tensor_for_state(next_state)
-                self.add_to_cuda(next_tensor)
+                next_tensor = self.get_tensor_for_state(next_state).to(self.torch_device)
+                #self.add_to_cuda(next_tensor)
                                 
                 current_move_result = TetrisMoveResult(current_state, current_tensor, action_index, reward, is_game_over, next_state, next_tensor)
                 game_move_results.append(current_move_result)
@@ -194,7 +195,7 @@ class TrainVanillaDqnV4(object):
                     self.print_epoch_complete(random_action, action_index, loss_value)
                     
                     if self.episode % self.opt.save_interval == 0:
-                        torch.save(self.model, "{}/tetris_{}".format(self.opt.saved_path, self.episode))
+                        torch.save(self.model, "{}/{}_tetris_{}".format(self.opt.saved_path, self.run_time_str, self.episode))
                     self.epoch += 1
                         
             self.replay_memory.insert(game_move_results, self.game_id)
@@ -210,17 +211,7 @@ class TrainVanillaDqnV4(object):
             # Increment Game ID
             self.game_id += 1
             
-        torch.save(model, "{}/tetris".format(opt.saved_path))
-        
-        
-
-
-def choose_explore_or_exploit():
-    return "EXPLORE"
-
-
-
-
+        torch.save(self.model, "{}/{}_tetris".format(self.opt.saved_path, self.run_time_str))
 
 def get_args():
     parser = argparse.ArgumentParser(
