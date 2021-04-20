@@ -63,7 +63,7 @@ class TrainVanillaDqnV4(object):
         
         self.model.eval()
         with torch.no_grad():
-            input_tensor = torch.unsqueeze(current_tensor, 0)
+            input_tensor = torch.unsqueeze(current_tensor, 0).to(self.torch_device)
             predictions = self.model(input_tensor)
             action_index = torch.argmax(predictions)
         self.model.train()
