@@ -44,7 +44,7 @@ class TrainVanillaDqnV4(object):
     
     def get_current_time_ms(self):
         return round(time.time() * 1000)
-    
+
     '''
         Epsilon is the probability of taking a random action (explore).
         Otherwise, we will act according to the model output (exploit).
@@ -63,7 +63,7 @@ class TrainVanillaDqnV4(object):
         
         self.model.eval()
         with torch.no_grad():
-            input_tensor = torch.unsqueeze(current_tensor, 0)
+            input_tensor = torch.unsqueeze(current_tensor, 0).to(self.torch_device)
             predictions = self.model(input_tensor)
             action_index = torch.argmax(predictions)
         self.model.train()
@@ -138,7 +138,7 @@ class TrainVanillaDqnV4(object):
         self.run_time = datetime.now()
         self.run_time_str = self.run_time.strftime("%b%d_%H%M%S")
         self.torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        
+
         self.initialize_torch_random()
         self.create_output_directories()
         self.env = Tetris()
@@ -236,7 +236,7 @@ def get_args():
     parser.add_argument("--num_epochs", type=int, default=3000)
     parser.add_argument("--num_decay_episodes", type=int, default=2000)
     parser.add_argument("--num_episodes", type=int, default=2500)
-    parser.add_argument("--save_interval", type=int, default=20) # This is a number of EPISODES
+    parser.add_argument("--save_interval", type=int, default=20)  # This is a number of EPISODES
     parser.add_argument("--replay_memory_size", type=int, default=1000,
                         help="Number of epoches between testing phases")
     parser.add_argument("--log_path", type=str, default="tensorboard")
