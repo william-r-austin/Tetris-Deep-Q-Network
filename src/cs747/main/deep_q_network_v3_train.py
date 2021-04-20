@@ -31,6 +31,7 @@ def get_args():
     parser.add_argument("--final_epsilon", type=float, default=1e-3)
     parser.add_argument("--num_decay_epochs", type=float, default=2000)
     parser.add_argument("--num_epochs", type=int, default=3000)
+    parser.add_argument("--num_decay_episodes", type=int, default=2000)
     parser.add_argument("--num_episodes", type=int, default=2500)
     parser.add_argument("--save_interval", type=int, default=1000)
     parser.add_argument("--replay_memory_size", type=int, default=1000,
@@ -109,7 +110,23 @@ def do_minibatch_update(episode, epoch, game_id, env, model, replay_memory, opti
     #writer.add_scalar('Train/Tetrominoes', final_tetrominoes, epoch - 1)
     #writer.add_scalar('Train/Cleared lines', final_cleared_lines, epoch - 1)
 
-
+'''
+Epsilon is the probability of making a RANDOM choice.
+'''
+def get_epsilon_for_episode(episode, opt):
+    epsilon_range = opt.final_epsilon - opt.initial_epsilon
+    episode_range = opt.num_decay_episodes - 1
+    
+    current_percent = (episode - 1) / episode_range
+    # Clamp the percent to [0, 1]
+    new_index = max(0, min(1, current_percent))
+    
+    epsilon = opt.initial_epsilon + current_percent * epsilon_range
+    
+    return epsilon 
+    
+    #epsilon = opt.final_epsilon + (max(opt.num_decay_epochs - epoch, 0) * (
+    #                    opt.initial_epsilon - opt.final_epsilon) / opt.num_decay_epochs)
 
 def train(opt):
     if torch.cuda.is_available():
@@ -147,6 +164,7 @@ def train(opt):
         print("Starting new Tetris game. Game ID: {}".format(game_id))
         is_game_over = False
         game_move_results = []
+        epsilon = get_epsilon_for_episode(episode, opt)
         current_state = env.get_current_board_state()
         current_tensor = get_tensor_for_state(current_state)
         if torch.cuda.is_available():
@@ -157,10 +175,10 @@ def train(opt):
             
             random_action = True
             if replay_memory_full:
-                epsilon = opt.final_epsilon + (max(opt.num_decay_epochs - epoch, 0) * (
-                        opt.initial_epsilon - opt.final_epsilon) / opt.num_decay_epochs)
+                #epsilon = opt.final_epsilon + (max(opt.num_decay_epochs - epoch, 0) * (
+                #        opt.initial_epsilon - opt.final_epsilon) / opt.num_decay_epochs)
                 u = random()
-                random_action = u <= epsilon
+                random_action = (u <= epsilon)
             
             action_index = 0
             
@@ -203,15 +221,16 @@ def train(opt):
         final_cleared_lines = env.cleared_lines
         
         if replay_memory_full:
-            print("    Tetris game completed. Training Episode: {}, Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}\n".format(
+            print("    Tetris game completed. Training Episode: {}, Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Epsilon: {}\n".format(
                 episode,
                 game_id,
                 final_score,
                 final_tetrominoes,
-                final_cleared_lines))
+                final_cleared_lines,
+                epsilon))
             episode += 1
         else:
-            print("    Tetris game completed. Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Experience Replay Progress: {}/{}\n".format(
+            print("    Tetris setup game completed. Game ID: {}, Score: {}, Tetrominoes: {}, Cleared Lines: {}, Experience Replay Progress: {}/{}\n".format(
                 game_id,
                 final_score,
                 final_tetrominoes,
