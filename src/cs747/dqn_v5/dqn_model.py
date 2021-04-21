@@ -4,12 +4,15 @@
 import torch.nn as nn
 
 class DeepQNetworkSimple(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size, output_size):
         super(DeepQNetworkSimple, self).__init__()
-        self.layer1 = nn.Sequential(nn.Linear(200, 64), nn.ReLU(inplace=True))
-        self.layer2 = nn.Sequential(nn.Linear(64, 32), nn.ReLU(inplace=True))
-        self.layer3 = nn.Sequential(nn.Linear(32, 16), nn.ReLU(inplace=True))
-        self.layer4 = nn.Sequential(nn.Linear(16, 6))
+        self.a0 = nn.Sequential(nn.Linear(input_size, 120), nn.ReLU(inplace=True))
+        self.a1 = nn.Sequential(nn.Linear(120, 72), nn.ReLU(inplace=True))
+        self.a2 = nn.Sequential(nn.Linear(72, 43), nn.ReLU(inplace=True))
+        self.a3 = nn.Sequential(nn.Linear(43, 26), nn.ReLU(inplace=True))
+        self.a4 = nn.Sequential(nn.Linear(26, 16), nn.ReLU(inplace=True))
+        self.a5 = nn.Sequential(nn.Linear(16, 9), nn.ReLU(inplace=True))
+        self.a6 = nn.Sequential(nn.Linear(9, output_size))
 
         self._create_weights()
 
@@ -20,10 +23,38 @@ class DeepQNetworkSimple(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.a0(x)
+        x = self.a1(x)
+        x = self.a2(x)
+        x = self.a3(x)
+        x = self.a4(x)
+        x = self.a5(x)
+        x = self.a6(x)
+
+        return x
+
+class DeepQNetwork(nn.Module):
+    def __init__(self):
+        super(DeepQNetwork, self).__init__()
+
+        #nn.Conv2d(in_channels, out_channels, kernel_size, stride=4, padding, dilation, groups, bias, padding_mode)
+        self.conv1 = nn.Sequential(nn.Linear(200, 64), nn.ReLU(inplace=True))
+        self.conv2 = nn.Sequential(nn.Linear(64, 64), nn.ReLU(inplace=True))
+        self.conv3 = nn.Sequential(nn.Linear(64, 6))
+
+        self._create_weights()
+
+    def _create_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+
         return x
 
 class DeepQNetworkAtari(nn.Module):
