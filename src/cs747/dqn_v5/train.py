@@ -28,15 +28,34 @@ class TrainVanillaDqnV5(object):
             torch.cuda.manual_seed(747)
         else:
             torch.manual_seed(747)
+            
+    def ensure_dir(self, dir_path):
+        directory = os.path.dirname(dir_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
     
     def create_output_directories(self):
-        if os.path.isdir(self.opt.log_path):
-            shutil.rmtree(self.opt.log_path)
-        os.makedirs(self.opt.log_path)
+        dir_parts = []
+        parent_path, file_name = os.path.split(__file__)
+        dir_parts.insert(0, file_name)
         
-        if os.path.isdir(self.opt.saved_path):
-            shutil.rmtree(self.opt.saved_path)
-        os.makedirs(self.opt.saved_path)
+        while file_name != "src":
+            parent_path, file_name = os.path.split(parent_path)
+            dir_parts.insert(0, file_name)
+        
+        version = "main"
+        if(len(dir_parts) >= 3):
+            version = dir_parts[2]
+                
+        run_time_dir = os.path.join(parent_path, "output", version, self.run_time_str)
+        
+        self.logs_directory = os.path.join(run_time_dir, "logs")
+        if not os.path.exists(self.logs_directory):
+            os.makedirs(self.logs_directory)
+        
+        self.models_directory = os.path.join(run_time_dir, "models")
+        if not os.path.exists(self.models_directory):
+            os.makedirs(self.models_directory)
     
     def add_to_cuda(self, *cuda_objects):
         if torch.cuda.is_available():
@@ -213,7 +232,8 @@ class TrainVanillaDqnV5(object):
                         self.print_epoch_complete(random_action, action_index, loss_value, reward)
                     
                     if self.episode % self.opt.save_interval == 0:
-                        torch.save(self.model, "{}/{}_tetris_{}".format(self.opt.saved_path, self.run_time_str, self.episode))
+                        model_path = os.path.join(self.models_directory, "tetris_{}.pt".format(self.episode))
+                        torch.save(self.model, model_path)
                     self.epoch += 1
                         
             self.replay_memory.insert(game_move_results, self.game_id)
@@ -230,8 +250,9 @@ class TrainVanillaDqnV5(object):
             
             # Increment Game ID
             self.game_id += 1
-            
-        torch.save(self.model, "{}/{}_tetris".format(self.opt.saved_path, self.run_time_str))
+        
+        model_path = os.path.join(self.models_directory, "tetris_final.pt")    
+        torch.save(self.model, model_path)
 
 def get_args():
     parser = argparse.ArgumentParser(
@@ -250,7 +271,7 @@ def get_args():
     parser.add_argument("--num_episodes", type=int, default=12500)
     parser.add_argument("--save_interval", type=int, default=100)  # This is a number of EPISODES
     parser.add_argument("--replay_memory_size", type=int, default=15000,
-                        help="Number of epoches between testing phases")
+                        help="Number of epochs between testing phases")
     parser.add_argument("--log_path", type=str, default="tensorboard")
     parser.add_argument("--saved_path", type=str, default="trained_models")
 
