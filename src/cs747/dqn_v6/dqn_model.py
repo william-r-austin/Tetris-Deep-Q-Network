@@ -105,3 +105,109 @@ class DeepQNetworkAtari(nn.Module):
         x = self.fc2(x)               # In: (256,)       Out: (4,)
         
         return x
+
+class DeepQNetworkAtariSmall(nn.Module):
+    def __init__(self, num_actions):
+        super(DeepQNetworkAtariSmall, self).__init__()
+        self.num_actions = num_actions
+        
+        # 
+        self.convolutionalLayer1 = nn.Conv2d(
+            in_channels=1,
+            out_channels=32,
+            kernel_size=3,
+            stride=1,
+            padding=1
+            )
+        self.batchNorm1 = nn.BatchNorm2d(32)
+        self.leakyRelu1 = nn.LeakyReLU()
+        
+        '''
+        self.conv2 = nn.Conv2d(
+            in_channels=32,
+            out_channels=16,
+            kernel_size=(1, 2),
+            stride=(1, 2),
+            padding=0
+            )
+        '''
+        self.convolutionalLayer2 = nn.Conv2d(
+            in_channels=32,
+            out_channels=64,
+            kernel_size=(4, 2),
+            stride=(4, 2),
+            padding=0
+            )
+        self.batchNorm2 = nn.BatchNorm2d(64)
+        self.leakyRelu2 = nn.LeakyReLU()
+        
+        self.convolutionalLayer3 = nn.Conv2d(
+            in_channels=64,
+            out_channels=4,
+            kernel_size=1,
+            stride=1,
+            padding=0
+        )
+        self.batchNorm3 = nn.BatchNorm2d(4)
+        self.leakyRelu3 = nn.LeakyReLU()
+
+        # Layer 4
+        self.fullyConnectedLayer4 = nn.Linear(
+            in_features=100,
+            out_features=24,
+        )
+        self.leakyRelu4 = nn.LeakyReLU()
+        self.dropout4 = nn.Dropout()
+        
+        
+        self.fullyConnectedLayer5 = nn.Linear(
+            in_features=24,
+            out_features=num_actions,
+        )
+    
+    def flatten(self, x):
+        batch_size = x.size()[0]
+        x = x.view(batch_size, -1)
+        return x
+    
+    def forward(self, x):
+        '''
+            Input to Layer 1: torch.Size([512, 1, 20, 10])
+            Input to Layer 2: torch.Size([512, 32, 20, 10])
+            Input to Layer 3: torch.Size([512, 64, 5, 5])
+            Input to flatten: torch.Size([512, 4, 5, 5])
+            Input to Layer 4: torch.Size([512, 100])
+            Input to Layer 5: torch.Size([512, 24])
+            Output: torch.Size([512, 6])
+        '''
+        
+        
+        #print("Input to Layer 1: " + str(x.size()))
+        x = self.convolutionalLayer1(x)
+        x = self.batchNorm1(x)
+        x = self.leakyRelu1(x)
+        
+        #print("Input to Layer 2: " + str(x.size()))
+        x = self.convolutionalLayer2(x)
+        x = self.batchNorm2(x)
+        x = self.leakyRelu2(x)
+        
+        #print("Input to Layer 3: " + str(x.size()))
+        x = self.convolutionalLayer3(x)
+        x = self.batchNorm3(x)
+        x = self.leakyRelu3(x)
+        
+        #print("Input to flatten: " + str(x.size()))
+        x = self.flatten(x)
+        
+        #print("Input to Layer 4: " + str(x.size()))
+        x = self.fullyConnectedLayer4(x)
+        x = self.leakyRelu4(x)
+        x = self.dropout4(x)
+        
+        #print("Input to Layer 5: " + str(x.size()))
+        x = self.fullyConnectedLayer5(x)
+        
+        #print("Output: " + str(x.size()))
+        
+        return x

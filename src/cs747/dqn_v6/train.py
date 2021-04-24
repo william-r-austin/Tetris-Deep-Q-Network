@@ -6,13 +6,14 @@ import os
 import shutil
 from random import random, randint, sample, randrange
 from datetime import datetime
+import numpy as np
 
 import torch
 import torch.nn as nn
 import time
 
-from cs747.dqn_v6.dqn_model import DeepQNetworkAtari
-from cs747.dqn_v6.experience_replay import ReplayMemory
+from cs747.dqn_v6.dqn_model import DeepQNetworkAtari, DeepQNetworkAtariSmall
+from cs747.dqn_v6.experience_replay import WeightedReplayMemory
 from cs747.dqn_v6.tetris import Tetris
 from cs747.dqn_v6.tetris_move_result import TetrisMoveResult
 from cs747.dqn_v6 import format_util
@@ -92,8 +93,8 @@ class TrainVanillaDqnV6(object):
     
     def print_game_complete(self):
         if self.replay_memory_full:
-            print("    Tetris game completed. Training Episode: {}, Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.2f}s, Epsilon: {:.4f}\n"
-                  .format(self.episode, self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon))
+            print("    Tetris game completed. Training Episode: {}/{}, Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.2f}s, Epsilon: {:.4f}\n"
+                  .format(self.episode, self.opt.num_episodes, self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon))
         else:
             print("    Tetris setup game completed. Game ID: {}, Reward Sum: {}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}\n"
                   .format(self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size))
@@ -104,26 +105,22 @@ class TrainVanillaDqnV6(object):
         
         print("    Episode: {}, Epoch: {}, Game ID: {}, Action Count: {}, Loss: {:.6f}, Reward: {}, Tetrominoes {}, Cleared lines: {}, Action Type: {}, Action Name: {}"
               .format(self.episode, self.epoch, self.game_id, self.env.action_count, loss_value, reward, self.env.tetrominoes, self.env.cleared_lines, action_type, action_name))
-        #writer.add_scalar('Train/Score', final_score, epoch - 1)
-        #writer.add_scalar('Train/Tetrominoes', final_tetrominoes, epoch - 1)
-        #writer.add_scalar('Train/Cleared lines', final_cleared_lines, epoch - 1)    
     
     def get_tensor_for_state(self, board_state):
-        return format_util.to_dqn_simple(board_state)
+        board_tensor = torch.from_numpy(board_state).to(self.torch_device)
+        state_tensor = torch.unsqueeze(board_tensor, 0).to(self.torch_device)
+        return state_tensor
+        #return format_util.to_dqn_simple(board_state)
 
     def do_minibatch_update(self):
-        batch = self.replay_memory.get_random_sample(self.opt.batch_size)
+        batch = self.replay_memory.get_random_weighted_sample(self.opt.batch_size)
         state_batch = torch.stack(tuple(sample.begin_tensor for sample in batch)).to(self.torch_device)
         next_state_batch = torch.stack(tuple(sample.next_tensor for sample in batch)).to(self.torch_device)
-        
-        #self.add_to_cuda(state_batch, next_state_batch)
         
         reward_list = [sample.reward for sample in batch]
         game_active_list = [(0 if sample.final_state_flag else 1) for sample in batch]
         reward_tensor = torch.tensor(reward_list).to(self.torch_device)
         game_active_tensor = torch.tensor(game_active_list).to(self.torch_device)
-    
-        #self.add_to_cuda(reward_tensor, game_active_tensor)
     
         self.model.eval()
         with torch.no_grad():
@@ -134,15 +131,11 @@ class TrainVanillaDqnV6(object):
         q_values_full = self.model(state_batch).to(self.torch_device)
         q_values = torch.amax(q_values_full, 1).to(self.torch_device)
         
-        #self.add_to_cuda(q_values)
-        
         y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) for reward, game_active_ind, next_q_value in
                   zip(reward_tensor, game_active_tensor, next_q_values))
         
         y_batch_init = torch.cat(y_batch_list).to(self.torch_device)
         y_batch = torch.reshape(y_batch_init, (-1,)).to(self.torch_device)
-        
-        #self.add_to_cuda(y_batch)
     
         self.optimizer.zero_grad()
         loss = self.criterion(q_values, y_batch)
@@ -174,11 +167,12 @@ class TrainVanillaDqnV6(object):
         self.create_output_directories()
         self.env = Tetris(height=self.opt.board_height, width=self.opt.board_width, block_size=self.opt.block_size, gamma=self.opt.gamma)
         self.action_names = self.env.get_action_names()
-        input_blocks = self.opt.board_height * self.opt.board_width
-        self.model = DeepQNetworkSimple(input_blocks, len(self.action_names)).to(self.torch_device)
+        #input_blocks = self.opt.board_height * self.opt.board_width
+        self.model = DeepQNetworkAtariSmall(len(self.action_names)).to(self.torch_device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
         self.criterion = nn.MSELoss()
-        self.replay_memory = ReplayMemory(frame_limit=self.opt.replay_memory_size)
+        self.replay_memory = WeightedReplayMemory(capacity=self.opt.replay_memory_size)
+        #self.replay_memory = ReplayMemory(frame_limit=self.opt.replay_memory_size)
         self.replay_memory_full = False
         self.game_time_ms = 0
         self.epsilon = 1
@@ -192,10 +186,14 @@ class TrainVanillaDqnV6(object):
             self.env.reset()
             print("Starting new Tetris game. Game ID: {}".format(self.game_id))
             is_game_over = False
-            game_move_results = []
+            #game_move_results = []
             self.set_epsilon_for_episode()
-            current_state = self.env.get_current_board_state()
+            temp_current_state = np.array(self.env.get_current_board_state(), dtype=np.float32)
+            current_state = np.clip(temp_current_state, -1, 1)
+            
+            #print("Current state shape = " + str(current_state.shape))
             current_tensor = self.get_tensor_for_state(current_state).to(self.torch_device)
+            #print("Current tensor shape = " + str(current_tensor.size()))
             start_time_ms = self.get_current_time_ms()
             #self.add_to_cuda(current_tensor)
              
@@ -216,27 +214,35 @@ class TrainVanillaDqnV6(object):
                 is_game_over = action_result_map["gameover"]
                 reward = action_result_map["reward"]
                 
-                next_state = self.env.get_current_board_state()
+                temp_next_state = np.array(self.env.get_current_board_state(), dtype=np.float32)
+                next_state = np.clip(temp_next_state, -1, 1)
+                #print("Next state shape = " + str(next_state.shape))
                 next_tensor = self.get_tensor_for_state(next_state).to(self.torch_device)
+                #print("Next tensor shape = " + str(next_tensor.size()))
                 #self.add_to_cuda(next_tensor)
                                 
                 current_move_result = TetrisMoveResult(current_state, current_tensor, action_index, reward, is_game_over, next_state, next_tensor)
-                game_move_results.append(current_move_result)
+                self.replay_memory.insert(current_move_result, abs(reward) + 0.01)
+                #game_move_results.append(current_move_result)
                 
                 current_state = next_state
                 current_tensor = next_tensor
                 
                 if self.replay_memory_full:
-                    loss_value = self.do_minibatch_update()
+                    loss_value = 0
+                    if self.epoch % 5 == 0:
+                        loss_value = self.do_minibatch_update()
+                    
                     if self.episode % 50 == 0:
                         self.print_epoch_complete(random_action, action_index, loss_value, reward)
                     
                     if self.episode % self.opt.save_interval == 0:
                         model_path = os.path.join(self.models_directory, "tetris_{}.pt".format(self.episode))
                         torch.save(self.model, model_path)
+                    
                     self.epoch += 1
                         
-            self.replay_memory.insert(game_move_results, self.game_id)
+            #self.replay_memory.insert(game_move_results, self.game_id)
             end_time_ms = self.get_current_time_ms()
             self.game_time_ms = end_time_ms - start_time_ms
             self.print_game_complete()
@@ -261,16 +267,16 @@ def get_args():
     parser.add_argument("--board_height", type=int, default=20, help="The tetris board height")
     parser.add_argument("--block_size", type=int, default=30, help="Size of a block")
     parser.add_argument("--batch_size", type=int, default=512, help="The number of samples per batch")
-    parser.add_argument("--learning_rate", type=float, default=1.5e-3)
-    parser.add_argument("--gamma", type=float, default=0.995)
-    parser.add_argument("--initial_epsilon", type=float, default=1)
-    parser.add_argument("--final_epsilon", type=float, default=1e-3)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--initial_epsilon", type=float, default=.75)
+    parser.add_argument("--final_epsilon", type=float, default=0.001)
     #parser.add_argument("--num_decay_epochs", type=float, default=2000)
     #parser.add_argument("--num_epochs", type=int, default=3000)
-    parser.add_argument("--num_decay_episodes", type=int, default=9000)
-    parser.add_argument("--num_episodes", type=int, default=12500)
-    parser.add_argument("--save_interval", type=int, default=100)  # This is a number of EPISODES
-    parser.add_argument("--replay_memory_size", type=int, default=15000,
+    parser.add_argument("--num_decay_episodes", type=int, default=25000)
+    parser.add_argument("--num_episodes", type=int, default=30000)
+    parser.add_argument("--save_interval", type=int, default=500)  # This is a number of EPISODES
+    parser.add_argument("--replay_memory_size", type=int, default=16384,
                         help="Number of epochs between testing phases")
     parser.add_argument("--log_path", type=str, default="tensorboard")
     parser.add_argument("--saved_path", type=str, default="trained_models")
