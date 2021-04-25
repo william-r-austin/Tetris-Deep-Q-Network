@@ -80,6 +80,9 @@ class WeightedReplayMemory(object):
     def get_capacity(self):
         return self.capacity
     
+    def reset_weights(self, new):
+        pass
+    
     def insert(self, new_object, weight):
         new_object_tuple = (new_object, weight, self.global_weight_sum)
         

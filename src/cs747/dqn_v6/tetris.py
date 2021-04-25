@@ -5,7 +5,6 @@ import numpy as np
 from PIL import Image
 import cv2
 from matplotlib import style
-import torch
 import random
 
 style.use("ggplot")
@@ -49,7 +48,6 @@ class Tetris:
     max_sideways_moves = 8
 
     def __init__(self, height=20, width=10, render_flag=False, block_size=30, gamma=0.99):
-        #, block_size=20):
         self.height = height
         self.width = width
         self.render_flag = render_flag
@@ -91,13 +89,7 @@ class Tetris:
         self.ind = self.bag.pop()
         self.piece = [row[:] for row in self.pieces[self.ind]]
         self.current_pos = {"x": self.width // 2 - len(self.piece[0]) // 2, "y": 0}
-        
-        # Use these during the collision check
-        #self.next_pos = {"x": 0, "y": 0}
-        #self.next_piece = [row[:] for row in self.pieces[self.ind]]
         self.gameover = False
-        #return self.get_state_properties(self.board)
-        #return self.get_current_board_state()
 
     def rotate(self, piece):
         num_rows_orig = num_cols_new = len(piece)
@@ -122,60 +114,6 @@ class Tetris:
                 new_row[num_cols_new - j - 1] = piece[(num_rows_orig - 1) - j][i]
             rotated_array.append(new_row)
         return rotated_array
-
-    '''
-    def get_state_properties(self, board):
-        lines_cleared, board = self.check_cleared_rows(board)
-        holes = self.get_holes(board)
-        bumpiness, height = self.get_bumpiness_and_height(board)
-
-        return torch.FloatTensor([lines_cleared, holes, bumpiness, height])
-
-    def get_holes(self, board):
-        num_holes = 0
-        for col in zip(*board):
-            row = 0
-            while row < self.height and col[row] == 0:
-                row += 1
-            num_holes += len([x for x in col[row + 1:] if x == 0])
-        return num_holes
-
-    def get_bumpiness_and_height(self, board):
-        board = np.array(board)
-        mask = board != 0
-        invert_heights = np.where(mask.any(axis=0), np.argmax(mask, axis=0), self.height)
-        heights = self.height - invert_heights
-        total_height = np.sum(heights)
-        currs = heights[:-1]
-        nexts = heights[1:]
-        diffs = np.abs(currs - nexts)
-        total_bumpiness = np.sum(diffs)
-        return total_bumpiness, total_height
-
-    def get_next_states(self):
-        states = {}
-        piece_id = self.ind
-        curr_piece = [row[:] for row in self.piece]
-        if piece_id == 0:  # O piece
-            num_rotations = 1
-        elif piece_id == 2 or piece_id == 3 or piece_id == 4:
-            num_rotations = 2
-        else:
-            num_rotations = 4
-
-        for i in range(num_rotations):
-            valid_xs = self.width - len(curr_piece[0])
-            for x in range(valid_xs + 1):
-                piece = [row[:] for row in curr_piece]
-                pos = {"x": x, "y": 0}
-                while not self.check_collision(piece, pos):
-                    pos["y"] += 1
-                self.truncate(piece, pos)
-                board = self.store(piece, pos)
-                states[(x, i)] = self.get_state_properties(board)
-            curr_piece = self.rotate(curr_piece)
-        return states
-    '''
    
     def get_current_board_state(self):
         board = [x[:] for x in self.board]
@@ -196,10 +134,8 @@ class Tetris:
             self.gameover = True
 
     def check_collision(self, piece, pos):
-        #future_y = pos["y"] + 1
         for y in range(len(piece)):
             for x in range(len(piece[y])):
-                #if future_y + y > self.height - 1 or self.board[future_y + y][pos["x"] + x] and piece[y][x]:
                 future_y = pos["y"] + y
                 future_x = pos["x"] + x 
                 boardViolation = future_y > self.height - 1 or future_x < 0 or future_x > self.width - 1
@@ -212,26 +148,6 @@ class Tetris:
                         return True
                     
         return False
-
-    def truncate(self, piece, pos):
-        gameover = False
-        last_collision_row = -1
-        for y in range(len(piece)):
-            for x in range(len(piece[y])):
-                if self.board[pos["y"] + y][pos["x"] + x] and piece[y][x]:
-                    if y > last_collision_row:
-                        last_collision_row = y
-
-        if pos["y"] - (len(piece) - last_collision_row) < 0 and last_collision_row > -1:
-            while last_collision_row >= 0 and len(piece) > 1:
-                gameover = True
-                last_collision_row = -1
-                del piece[0]
-                for y in range(len(piece)):
-                    for x in range(len(piece[y])):
-                        if self.board[pos["y"] + y][pos["x"] + x] and piece[y][x] and y > last_collision_row:
-                            last_collision_row = y
-        return gameover
 
     def store(self, piece, pos):
         board = [x[:] for x in self.board]
@@ -332,13 +248,12 @@ class Tetris:
 
         return new_reward, old_reward
     
-    
     """
         Returns a tuple (score, game over, is piece finalized)
     """
     def executeMove(self, next_pos, next_piece, is_down_move):
         move_collision = self.check_collision(next_piece, next_pos)
-        result_map = {"reward": -0.05, "gameover": False, "finalized": False, "score_delta": 0}
+        result_map = {"reward": -0.05, "gameover": self.gameover, "finalized": False, "score_delta": 0}
 
         if is_down_move:
             self.sideways_moves_count = 0
@@ -362,69 +277,12 @@ class Tetris:
             else:
                 self.piece = next_piece
                 self.current_pos = next_pos
-                
-        '''        
-        if move_collision:
-            self.sideways_moves_count = 0
-            if is_down_move:
-                move_reward = self.finalize_piece()
-                result_map["reward"] = move_reward
-                result_map["gameover"] = self.gameover
-                result_map["finalized"] = True
-            else:
-                # move down
-                result_map = self.moveDown()
-                #next_pos = {"x": self.current_pos["x"], "y": self.current_pos["y"] + 1}
-                #next_piece = self.piece
-                #move_score, gameover_flag, is_piece_finalized = move_down_result
-        else:
-            self.piece = next_piece
-            self.current_pos = next_pos
-            
-            if is_down_move:
-                self.sideways_moves_count = 0
-            else:
-                self.sideways_moves_count += 1
-                
-                if self.sideways_moves_count >= self.max_sideways_moves:
-                    result_map = self.moveDown()
-        '''
-        
+              
         if self.render_flag:
             self.render()
         
-        #return move_score, self.gameover, is_piece_finalized
+        #return reward, self.gameover, is_piece_finalized, score_delta
         return result_map
-
-    def step(self, action, render=False, video=None):
-        x, num_rotations = action
-        self.current_pos = {"x": x, "y": 0}
-        for _ in range(num_rotations):
-            self.piece = self.rotate(self.piece)
-
-        while not self.check_collision(self.piece, self.current_pos):
-            self.current_pos["y"] += 1
-            if render:
-                self.render(video)
-
-        # Not sure why we're doing this
-        overflow = self.truncate(self.piece, self.current_pos)
-        if overflow:
-            self.gameover = True
-
-        self.board = self.store(self.piece, self.current_pos)
-
-        lines_cleared, self.board = self.check_cleared_rows(self.board)
-        score = 1 + (lines_cleared ** 2) * self.width
-        self.score += score
-        self.tetrominoes += 1
-        self.cleared_lines += lines_cleared
-        if not self.gameover:
-            self.new_piece()
-        if self.gameover:
-            self.score -= 2
-
-        return score, self.gameover
 
     def render(self, video=None):
         if not self.gameover:
