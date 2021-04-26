@@ -675,8 +675,8 @@ def get_args():
 
     # Parameters for RL    
     parser.add_argument("--source_model_path", type=str, default=None, help="Location of the saved model to load for training (relative to output/ or absolute).")
-    parser.add_argument("--replay_memory_size", type=int, default=384, help="Number of actions stored in the experience replay memory")
-    parser.add_argument("--minibatch_size", type=int, default=32, help="The number of samples per batch")
+    parser.add_argument("--replay_memory_size", type=int, default=16384, help="Number of actions stored in the experience replay memory")
+    parser.add_argument("--minibatch_size", type=int, default=512, help="The number of samples per batch")
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--target_network_momentum", type=float, default=0.999)
@@ -685,21 +685,21 @@ def get_args():
     parser.add_argument("--print_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
     parser.add_argument("--log_file_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
     parser.add_argument("--log_csv_episode_freq", type=int, default=1, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
-    parser.add_argument("--save_model_episode_freq", type=int, default=500)
+    parser.add_argument("--save_model_episode_freq", type=int, default=2000)
     
-    parser.add_argument("--num_episodes", type=int, default=1000)
-    parser.add_argument("--num_decay_episodes", type=int, default=800)
+    parser.add_argument("--num_episodes", type=int, default=100000)
+    parser.add_argument("--num_decay_episodes", type=int, default=80000)
     
     parser.add_argument("--replay_memory_init_epsilon", type=float, default=-1.0, help="Epsilon to use while populating replay memory. Use -1 to ignore and use initial_epsilon")
     parser.add_argument("--initial_epsilon", type=float, default=.75)
     parser.add_argument("--final_epsilon", type=float, default=0.001)
     
     # EPOCH based events
-    parser.add_argument("--print_epoch_freq", type=int, default=12)
-    parser.add_argument("--log_file_epoch_freq", type=int, default=12)
-    parser.add_argument("--log_csv_epoch_freq", type=int, default=-1)
+    parser.add_argument("--print_epoch_freq", type=int, default=40)
+    parser.add_argument("--log_file_epoch_freq", type=int, default=40)
+    parser.add_argument("--log_csv_epoch_freq", type=int, default=40)
     
-    parser.add_argument("--target_network_update_epoch_freq", type=int, default=800)
+    parser.add_argument("--target_network_update_epoch_freq", type=int, default=12000)
     parser.add_argument("--minibatch_update_epoch_freq", type=int, default=4)
     
         
