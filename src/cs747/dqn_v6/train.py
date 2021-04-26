@@ -207,7 +207,7 @@ class TrainVanillaDqnV6():
         episode_property_values["Episode_Num"] = str(self.episode)
         episode_property_values["Total_Episodes"] = str(self.opt.num_episodes)
         episode_property_values["Game_ID"] = str(self.game_id)
-        episode_property_values["Reward_Sum"] = str(self.env.discounted_reward)
+        episode_property_values["Reward_Sum"] = str(self.episode_q_value_sum)
         episode_property_values["Tetrominoes"] = str(self.env.tetrominoes)
         episode_property_values["Action_Count"] = str(self.env.action_count)
         episode_property_values["Cleared_Lines"] = str(self.env.cleared_lines)
@@ -264,11 +264,11 @@ class TrainVanillaDqnV6():
         Get the info message for the episode.
         '''
         if self.replay_memory_full:
-            info_message = "Training Episode: {}/{}, Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
-                self.episode, self.opt.num_episodes, self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
+            info_message = "Training Episode: {}/{}, Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
+                self.episode, self.opt.num_episodes, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
         else:
-            info_message = "Setup Episode: Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
-                self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size)
+            info_message = "Setup Episode: Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
+                self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size)
         
         return info_message
     
@@ -467,6 +467,15 @@ class TrainVanillaDqnV6():
         '''
         
         if self.replay_memory_full:
+            # Do a mini-batch
+            if self.epoch % self.opt.minibatch_update_epoch_freq == 0:
+                self.do_minibatch_update()
+            
+            # Target Network Update
+            if self.epoch % self.opt.target_network_update_epoch_freq == 0:
+                self.update_target_network()
+                self.refresh_replay_memory()
+            
             # Logging / Printing
             print_flag = self.epoch % self.opt.print_epoch_freq == 0
             log_flag = self.epoch % self.opt.log_file_epoch_freq == 0
@@ -485,15 +494,6 @@ class TrainVanillaDqnV6():
             
             if csv_flag:
                 self.write_to_file(self.epochs_file, "Epoch = " +  str(self.epoch))
-            
-            # Do a mini-batch
-            if self.epoch % self.opt.minibatch_update_epoch_freq == 0:
-                self.do_minibatch_update()
-            
-            # Target Network Update
-            if self.epoch % self.opt.target_network_update_epoch_freq == 0:
-                self.update_target_network()
-                self.refresh_replay_memory()
             
             self.epoch += 1
         
@@ -575,7 +575,7 @@ class TrainVanillaDqnV6():
             
             #print("Starting new Tetris game. Game ID: {}".format(self.game_id))
             self.epoch_game_over = False
-            #game_move_results = []
+            game_move_results = []
             self.set_epsilon_for_episode()
             
             current_state = self.env.get_current_board_state()
@@ -621,7 +621,7 @@ class TrainVanillaDqnV6():
                                                        self.epoch_game_over, next_state, next_tensor, self.epoch_target_q_value, self.epoch_weight)
                 
                 self.replay_memory.insert(current_move_result)
-                #game_move_results.append(current_move_result)
+                game_move_results.append(current_move_result)
                 
                 current_state = next_state
                 current_tensor = next_tensor
@@ -632,6 +632,15 @@ class TrainVanillaDqnV6():
             #self.replay_memory.insert(game_move_results, self.game_id)
             end_time_ms = self.get_current_time_ms()
             self.game_time_ms = end_time_ms - start_time_ms
+            
+            # Calculate the total discounted q-value for the game
+            q_value_sum = 0
+            for move_result in reversed(game_move_results):
+                q_value_sum = move_result.reward + self.opt.gamma * q_value_sum
+                move_result.true_q_value = q_value_sum
+            
+            self.episode_q_value_sum = q_value_sum
+                
             
             # Do the processing for the end of the GAME.
             self.game_finished()

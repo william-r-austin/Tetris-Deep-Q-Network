@@ -19,6 +19,7 @@ class TetrisMoveResult():
 		self.weight = weight
 		self.discounted_future_reward = 0
 		self.global_weight_sum = 0
+		self.true_q_value = None
 	
 	
 	def set_discounted_future_reward(self, discounted_future_reward):

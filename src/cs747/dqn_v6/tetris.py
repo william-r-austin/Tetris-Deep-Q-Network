@@ -78,7 +78,7 @@ class Tetris:
 
     def reset(self):
         self.board = [[0] * self.width for _ in range(self.height)]
-        self.discounted_reward = 0.0
+        #self.discounted_reward = 0.0
         self.score = 0
         self.tetrominoes = 0
         self.cleared_lines = 0
@@ -178,7 +178,7 @@ class Tetris:
             action_name = self.action_names[action_id]
             action_function = self.actions[action_name]
             result_map = action_function()
-            self.discounted_reward = result_map["reward"] + (self.gamma * self.discounted_reward)
+            #self.discounted_reward = result_map["reward"] + (self.gamma * self.discounted_reward)
             self.action_count += 1
         else:
             print("Invalid move received.")
@@ -193,7 +193,7 @@ class Tetris:
         if action_name in self.action_names:
             action_function = self.actions[action_name]
             result_map = action_function()
-            self.discounted_reward = result_map["reward"] + (self.gamma * self.discounted_reward)
+            #self.discounted_reward = result_map["reward"] + (self.gamma * self.discounted_reward)
             self.action_count += 1
         else:
             print("Invalid move received.")
@@ -232,7 +232,7 @@ class Tetris:
         self.board = self.store(self.piece, self.current_pos)
         lines_cleared, self.board = self.check_cleared_rows(self.board)
         old_reward = 1 + (lines_cleared ** 2) * self.width
-        new_reward = 2 + (lines_cleared ** 2) * 15
+        new_reward = 3.5 + (lines_cleared ** 2) * 15
         
         self.tetrominoes += 1
         self.cleared_lines += lines_cleared
