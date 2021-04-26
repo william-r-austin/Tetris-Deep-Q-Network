@@ -64,7 +64,7 @@ class WeightedReplayMemory(object):
     def __init__(self, capacity):
         self.capacity = capacity
         self.object_buffer = deque(maxlen=self.capacity)
-        self.weight_offsets = deque(maxlen=self.capacity)
+        #self.weight_offsets = deque(maxlen=self.capacity)
         self.total_buffer_weight = 0
         self.global_weight_sum = 0
     
@@ -80,33 +80,53 @@ class WeightedReplayMemory(object):
     def get_capacity(self):
         return self.capacity
     
-    def reset_weights(self, new):
-        pass
+    '''
+    def get_full_object_list(self):
+        full_object_list = [self.object_buffer[i][0] for i in range(len(self.object_buffer))]
+        return full_object_list
+    '''
     
-    def insert(self, new_object, weight):
-        new_object_tuple = (new_object, weight, self.global_weight_sum)
+    def reset_weights(self):
+        self.total_buffer_weight = 0
+        self.global_weight_sum = 0
+        
+        for move_result in self.object_buffer:
+            #weight = move_result.weight
+            move_result.global_weight_sum = self.global_weight_sum
+            
+            #buffer_tuple[1] = weight
+            #buffer_tuple[2] = self.global_weight_sum
+            
+            self.total_buffer_weight += move_result.weight
+            self.global_weight_sum += move_result.weight
+    
+    def insert(self, new_object):
+        weight = new_object.weight
+        new_object.global_weight_sum = self.global_weight_sum
+        #new_object_tuple = (new_object, weight, self.global_weight_sum)
         
         if(len(self.object_buffer) < self.capacity):
-            self.object_buffer.append(new_object_tuple)
+            self.object_buffer.append(new_object)
             self.total_buffer_weight += weight
             self.global_weight_sum += weight
         else:
             removed_object = self.object_buffer.popleft()
-            removed_weight = removed_object[1]
+            removed_weight = removed_object.weight
             self.total_buffer_weight -= removed_weight
             
-            self.object_buffer.append(new_object_tuple)
+            self.object_buffer.append(new_object)
             self.total_buffer_weight += weight
             self.global_weight_sum += weight
     
     def get_random_weighted_sample(self, sample_size):
         if len(self.object_buffer) > 0:
-            offset = self.object_buffer[0][2]
+            first_object = self.object_buffer[0]
+            offset = first_object.global_weight_sum
             random_weights = self.total_buffer_weight * np.random.random_sample((sample_size,)) + offset
             sample_indices = [self.find_index_for_weight(random_weights[i]) for i in range(sample_size)]
-            return [self.object_buffer[k][0] for k in sample_indices]
+            return [self.object_buffer[k] for k in sample_indices]
         
-        return None     
+        return []     
     
     def find_index_for_weight(self, sample_weight):
         start_index = 0
@@ -116,7 +136,7 @@ class WeightedReplayMemory(object):
             difference = end_index - start_index
             mid_index = start_index + (difference // 2) + (1 if difference % 2 > 0 else 0)
             mid_object = self.object_buffer[mid_index]
-            mid_val = mid_object[2] 
+            mid_val = mid_object.global_weight_sum 
             
             if mid_val < sample_weight:
                 start_index = mid_index

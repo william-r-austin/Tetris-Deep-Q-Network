@@ -117,7 +117,7 @@ class TrainVanillaDqnV6():
         self.run_options_file.write("Run Key is: " + self.run_time_str + "\n")
         self.run_options_file.write("Training File is: " + str(__file__) + "\n")
         self.run_options_file.write("\nArguments from command line are below:" + "\n")
-        for k, v in vars(self.run_options).items():
+        for k, v in vars(self.opt).items():
             self.run_options_file.write(f"{k} = {v}\n")
         
         self.run_options_file.close()
@@ -157,14 +157,30 @@ class TrainVanillaDqnV6():
         '''
         Epsilon is the probability of taking a random action (explore).
         Otherwise, we will act according to the model output (exploit).
-        '''        
-        epsilon_range = self.opt.final_epsilon - self.opt.initial_epsilon
-        episode_range = self.opt.num_decay_episodes - 1
-        current_percent = (self.episode - 1) / episode_range
-        
-        # Clamp the percent to [0, 1]
-        current_percent = max(0, min(1, current_percent))
-        self.epsilon = self.opt.initial_epsilon + current_percent * epsilon_range
+        '''
+        if self.replay_memory_full:
+            epsilon_range = self.opt.final_epsilon - self.opt.initial_epsilon
+            episode_range = self.opt.num_decay_episodes - 1
+            current_percent = (self.episode - 1) / episode_range
+            
+            # Clamp the percent to [0, 1]
+            current_percent = max(0, min(1, current_percent))
+            self.epsilon = self.opt.initial_epsilon + current_percent * epsilon_range            
+        else:
+            # Check if we wanted to specify a different epsilon when loading the replay memory
+            # This could be used if we want to continue training a model and not have
+            # random replay experience.
+            if self.opt.replay_memory_init_epsilon >= 0:
+                self.epsilon = self.opt.replay_memory_init_epsilon
+            else:
+                self.epsilon = self.opt.initial_epsilon
+
+    @torch.no_grad()
+    def get_q_values(self, eval_model, state_tensor):
+        model_input = torch.unsqueeze(state_tensor, 0).to(self.torch_device)
+        model_output = eval_model(model_input)
+        predictions = torch.squeeze(model_output, dim=0).to(self.torch_device)
+        return predictions
 
 
     @torch.no_grad()
@@ -248,10 +264,10 @@ class TrainVanillaDqnV6():
         Get the info message for the episode.
         '''
         if self.replay_memory_full:
-            info_message = "    Training Episode: {}/{}, Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.2f}s, Epsilon: {:.4f}".format(
+            info_message = "Training Episode: {}/{}, Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.2f}s, Epsilon: {:.4f}".format(
                 self.episode, self.opt.num_episodes, self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
         else:
-            info_message = "    Setup Episode: Game ID: {}, Reward Sum: {}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
+            info_message = "Setup Episode: Game ID: {}, Reward Sum: {}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
                 self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size)
         
         return info_message
@@ -290,8 +306,8 @@ class TrainVanillaDqnV6():
         
         reward_list = [sample.reward for sample in batch]
         game_active_list = [(0 if sample.final_state_flag else 1) for sample in batch]
-        reward_tensor = torch.tensor(reward_list, requires_grad=True).to(self.torch_device)
-        game_active_tensor = torch.tensor(game_active_list, requires_grad=True).to(self.torch_device)
+        reward_tensor = torch.tensor(reward_list).to(self.torch_device)
+        game_active_tensor = torch.tensor(game_active_list).to(self.torch_device)
     
         self.model.eval()
         with torch.no_grad():
@@ -330,7 +346,7 @@ class TrainVanillaDqnV6():
         print("===============================================\n")
     
     def save_model(self, model_filename):
-        model_path = os.path.join(self.models_directory, model_filename)
+        model_path = os.path.join(self.models_directory, model_filename + ".tar")
         model_save_params = {
                                 'epoch': self.epoch,
                                 'model_state_dict': self.model.state_dict(),
@@ -338,7 +354,7 @@ class TrainVanillaDqnV6():
                                 'loss': self.minibatch_update_loss,
                             }
         
-        torch.save(model_save_params, model_filename + ".tar")
+        torch.save(model_save_params, model_path)
     
     def initialize_model(self):
         source_model_path = self.opt.source_model_path
@@ -412,7 +428,37 @@ class TrainVanillaDqnV6():
         Perform a momentum update for the weights of the target network.
         '''
         for param_q_network, param_target_network in zip(self.model.parameters(), self.target_network.parameters()):
-            param_target_network.data = param_target_network.data * self.opt.target_network_momentum + param_q_network.data * (1. - self.target_network_momentum)
+            target_network_weight = param_target_network.data * self.opt.target_network_momentum
+            q_network_weight = param_q_network.data * (1. - self.opt.target_network_momentum)
+            param_target_network.data = target_network_weight + q_network_weight
+    
+    @torch.no_grad()
+    def refresh_replay_memory(self):
+        all_move_results = self.replay_memory.object_buffer
+        
+        begin_tensor_list = [move_result.begin_tensor for move_result in all_move_results]
+        begin_tensor_full = torch.stack(begin_tensor_list)
+        
+        next_tensor_list = [move_result.next_tensor for move_result in all_move_results]
+        next_tensor_full = torch.stack(next_tensor_list)
+        
+        index_action_tensor = torch.tensor([move_result.action for move_result in all_move_results])
+        reward_tensor = torch.tensor([move_result.reward for move_result in all_move_results])          
+        index_tensor = torch.tensor(range(len(all_move_results)))
+        
+        current_q_values_full = self.model(begin_tensor_full)
+        current_q_values = current_q_values_full[index_tensor, index_action_tensor]
+        
+        next_q_values_full = self.target_network(next_tensor_full)
+        next_q_values = torch.max(next_q_values_full, dim=1).values
+        
+        for current_q_value, next_q_value, reward, move_result in zip(current_q_values, next_q_values, reward_tensor, all_move_results):
+            move_result.begin_q_value = current_q_value
+            move_result.next_q_value = next_q_value
+            estimate_error = current_q_value - (reward + self.opt.gamma * next_q_value)
+            move_result.weight = abs(estimate_error)
+        
+        self.replay_memory.reset_weights()
 
     
     def step_finished(self):
@@ -421,12 +467,6 @@ class TrainVanillaDqnV6():
         '''
         
         if self.replay_memory_full:
-            if self.epoch % self.opt.target_network_update_epoch_freq == 0:
-                self.update_target_network()
-            
-            if self.epoch % self.opt.minibatch_update_epoch_freq == 0:
-                self.do_minibatch_update()
-            
             # Logging / Printing
             print_flag = self.epoch % self.opt.print_epoch_freq == 0
             log_flag = self.epoch % self.opt.log_file_epoch_freq == 0
@@ -445,6 +485,15 @@ class TrainVanillaDqnV6():
             
             if csv_flag:
                 self.write_to_file(self.epochs_file, "Epoch = " +  str(self.epoch))
+            
+            # Do a mini-batch
+            if self.epoch % self.opt.minibatch_update_epoch_freq == 0:
+                self.do_minibatch_update()
+            
+            # Target Network Update
+            if self.epoch % self.opt.target_network_update_epoch_freq == 0:
+                self.update_target_network()
+                self.refresh_replay_memory()
             
             self.epoch += 1
         
@@ -493,7 +542,7 @@ class TrainVanillaDqnV6():
             
         
         # Handle Model Saviing
-        if self.episode % self.opt.save_model_episode_freq == 0:
+        if self.episode > 0 and self.episode % self.opt.save_model_episode_freq == 0:
             model_filename = "tetris_{}_{}".format(self.episode, self.epoch)
             self.save_model(model_filename)
             
@@ -542,13 +591,15 @@ class TrainVanillaDqnV6():
                     u = random()
                     self.epoch_random_action_flag = (u <= self.epsilon)
                 
-                model_value, model_index = self.get_best_action_from_model(current_tensor)
+                current_q_values = self.get_q_values(self.model, current_tensor)
                 
                 if self.epoch_random_action_flag:
                     self.epoch_action_index = randrange(len(self.action_names))
+                    self.epoch_q_value = current_q_values[self.epoch_action_index].item()
                 else:
-                    self.epoch_action_index = model_index
-                               
+                    model_value, model_index = torch.max(current_q_values, dim=0)
+                    self.epoch_action_index = model_index.item()
+                    self.epoch_q_value = model_value.item()
                 
                 action_result_map = self.env.do_action_by_id(self.epoch_action_index)
                 self.epoch_action_name = self.action_names[self.epoch_action_index]
@@ -557,11 +608,19 @@ class TrainVanillaDqnV6():
                 
                 next_state = self.env.get_current_board_state()
                 next_tensor = self.get_tensor_for_state(next_state).to(self.torch_device)
-                                
-                current_move_result = TetrisMoveResult(current_state, current_tensor, self.epoch_action_index, self.epoch_reward, 
-                                                       self.epoch_game_over, next_state, next_tensor)
                 
-                self.replay_memory.insert(current_move_result, abs(self.epoch_reward) + 0.01)
+                # Use the target network estimate: r + gamma * max:a_next [Q_target(s_next, a_next)] 
+                # Compare to the DQN estimate for Q(s, a)   
+                next_q_values = self.get_q_values(self.target_network, next_tensor)
+                self.epoch_target_q_value = torch.max(next_q_values).item()
+                self.epoch_target_total = self.epoch_reward + self.opt.gamma * self.epoch_target_q_value
+                self.q_value_error = self.epoch_q_value - self.epoch_target_total
+                self.epoch_weight = abs(self.q_value_error)
+                                
+                current_move_result = TetrisMoveResult(current_state, current_tensor, self.epoch_q_value, self.epoch_action_index, self.epoch_reward, 
+                                                       self.epoch_game_over, next_state, next_tensor, self.epoch_target_q_value, self.epoch_weight)
+                
+                self.replay_memory.insert(current_move_result)
                 #game_move_results.append(current_move_result)
                 
                 current_state = next_state
@@ -602,17 +661,18 @@ def get_args():
     parser.add_argument("--minibatch_size", type=int, default=512, help="The number of samples per batch")
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--target_network_momentum", type=float, default=0.999)
 
     # EPISODE based events
-    parser.add_argument("--print_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples.")
-    parser.add_argument("--log_file_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples.")
-    parser.add_argument("--log_csv_episode_freq", type=int, default=1, help="Negative for Never. Zero for always (and setup). Positive for episode multiples.")
+    parser.add_argument("--print_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
+    parser.add_argument("--log_file_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
+    parser.add_argument("--log_csv_episode_freq", type=int, default=1, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
     parser.add_argument("--save_model_episode_freq", type=int, default=500)
     
     parser.add_argument("--num_episodes", type=int, default=30000)
     parser.add_argument("--num_decay_episodes", type=int, default=25000)
     
-    parser.add_argument("--replay_memory_init_epsilon", type=float, default=0)
+    parser.add_argument("--replay_memory_init_epsilon", type=float, default=-1.0, help="Epsilon to use while populating replay memory. Use -1 to ignore and use initial_epsilon")
     parser.add_argument("--initial_epsilon", type=float, default=.75)
     parser.add_argument("--final_epsilon", type=float, default=0.001)
     
