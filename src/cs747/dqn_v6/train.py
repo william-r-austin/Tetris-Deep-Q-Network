@@ -7,6 +7,7 @@ from random import random, randrange
 from datetime import datetime
 import numpy as np
 import copy
+import statistics
 
 import torch
 import torch.nn as nn
@@ -97,6 +98,7 @@ class TrainVanillaDqnV6():
         epochs_file_name = self.run_time_str + "_epochs.csv"
         self.epochs_file_path = os.path.join(self.logs_directory, epochs_file_name)
         self.epochs_file = open(self.epochs_file_path, "a")
+        self.epochs_file_header_added = False
         
         epochs_log_file_name = self.run_time_str + "_epochs_log.txt"
         self.epochs_log_file_path = os.path.join(self.logs_directory, epochs_log_file_name)
@@ -207,14 +209,17 @@ class TrainVanillaDqnV6():
         episode_property_values["Episode_Num"] = str(self.episode)
         episode_property_values["Total_Episodes"] = str(self.opt.num_episodes)
         episode_property_values["Game_ID"] = str(self.game_id)
-        episode_property_values["Reward_Sum"] = str(self.episode_q_value_sum)
+        episode_property_values["Reward_Sum"] = "{:.5f}".format(self.episode_q_value_sum)
         episode_property_values["Tetrominoes"] = str(self.env.tetrominoes)
         episode_property_values["Action_Count"] = str(self.env.action_count)
         episode_property_values["Cleared_Lines"] = str(self.env.cleared_lines)
-        episode_property_values["Duration"] = "{:.2f}".format(self.game_time_ms / 1000)
-        episode_property_values["Epsilon"] = str(self.epsilon)
-        episode_property_values["Replay_Memory_Size"] = str(self.replay_memory.get_size())
-        episode_property_values["Replay_Memory_Capacity"] = str(self.opt.replay_memory_size)
+        episode_property_values["Duration"] = "{:.3f}".format(self.game_time_ms / 1000)
+        episode_property_values["Epsilon"] = "{:.5f}".format(self.epsilon)
+        episode_property_values["Replay_Memory_Start_Size"] = str(self.episode_replay_memory_start_size)
+        #episode_property_values["Replay_Memory_Capacity"] = str(self.opt.replay_memory_size)
+        episode_property_values["Minibatch_Update_Count"] = str(len(self.episode_loss_vals))
+        episode_property_values["Average_Loss"] = "{:.5f}".format(statistics.mean(self.episode_loss_vals)) if self.episode_loss_vals else "n/a"
+        episode_property_values["Standard_Deviation_Loss"] = "{:.5f}".format(statistics.stdev(self.episode_loss_vals)) if self.episode_loss_vals else "n/a"
         
         if not self.episodes_file_header_added:
             header_row = ",".join(episode_property_values.keys())
@@ -231,25 +236,41 @@ class TrainVanillaDqnV6():
         '''
         Collect the data needed to log a single epoch. 
         '''
-        pass
-        
-        '''
         epoch_property_values = {}
-        epoch_property_values["Replay_Memory_Full"] = str(self.replay_memory_full)
+        epoch_property_values["Epoch"] = str(self.epoch)
         epoch_property_values["Episode_Num"] = str(self.episode)
         epoch_property_values["Total_Episodes"] = str(self.opt.num_episodes)
         epoch_property_values["Game_ID"] = str(self.game_id)
-        epoch_property_values["Reward_Sum"] = str(self.env.discounted_reward)
-        epoch_property_values["Tetrominoes"] = str(self.env.tetrominoes)
+        epoch_property_values["Epsilon"] = "{:.5f}".format(self.epsilon)
         epoch_property_values["Action_Count"] = str(self.env.action_count)
+        epoch_property_values["Minibatch_Loss"] = "{:.5f}".format(self.minibatch_update_loss)
+        epoch_property_values["Reward"] = str(self.epoch_reward)
+        epoch_property_values["Tetrominoes"] = str(self.env.tetrominoes)
         epoch_property_values["Cleared_Lines"] = str(self.env.cleared_lines)
-        epoch_property_values["Duration"] = "{:.2f}s".format(self.game_time_ms / 1000)
-        epoch_property_values["Epsilon"] = str(self.epsilon)
-        epoch_property_values["Replay_Memory_Size"] = str(self.replay_memory.get_size())
-        epoch_property_values["Replay_Memory_Capacity"] = str(self.opt.replay_memory_size)
-        '''
-        # Flush the file so the output gets written in case the program is terminated.
+        epoch_property_values["Random_Action_Flag"] = str(self.epoch_random_action_flag)
+        epoch_property_values["Action_Name"] = str(self.epoch_action_name)
+        epoch_property_values["Game_Over_Flag"] = str(self.epoch_game_over)
+        epoch_property_values["Epoch_Q_Value"] = "{:.5f}".format(self.epoch_q_value)
+        epoch_property_values["Next_Q_Value"] = "{:.5f}".format(self.epoch_target_q_value)
+        epoch_property_values["Q_Value_Error"] = "{:.5f}".format(self.q_value_error)
+        epoch_property_values["Move_Left_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[0].item())
+        epoch_property_values["Move_Right_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[1].item())
+        epoch_property_values["Move_Down_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[2].item())
+        epoch_property_values["Drop_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[3].item())
+        epoch_property_values["Rotate_Clockwise_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[4].item())
+        epoch_property_values["Rotate_Counterclockwise_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[5].item())
 
+        # Flush the file so the output gets written in case the program is terminated.
+        if not self.epochs_file_header_added:
+            header_row = ",".join(epoch_property_values.keys())
+            self.epochs_file.write(header_row + "\n")
+            self.epochs_file_header_added = True
+        
+        data_row = ",".join(epoch_property_values.values())
+        self.epochs_file.write(data_row + "\n")
+        
+        # Flush the file so the output gets written in case the program is terminated.
+        self.epochs_file.flush()
     
     def write_to_file(self, file_obj, message):
         '''
@@ -335,6 +356,8 @@ class TrainVanillaDqnV6():
         self.optimizer.step()
         
         self.minibatch_update_loss = loss.item()
+        
+        self.episode_loss_vals.append(self.minibatch_update_loss)
     
     def print_run_config(self):
         '''
@@ -501,7 +524,7 @@ class TrainVanillaDqnV6():
             csv_flag = self.epoch % self.opt.log_csv_epoch_freq == 0
             
             if csv_flag:
-                self.write_to_file(self.epochs_file, "Epoch = " +  str(self.epoch))
+                self.write_epochs_csv_file()
             
             self.epoch += 1
         
@@ -583,8 +606,11 @@ class TrainVanillaDqnV6():
             
             #print("Starting new Tetris game. Game ID: {}".format(self.game_id))
             self.epoch_game_over = False
+            self.episode_loss_vals = []
+            
             game_move_results = []
             self.set_epsilon_for_episode()
+            self.episode_replay_memory_start_size = self.replay_memory.get_size()
             
             current_state = self.env.get_current_board_state()
             current_tensor = self.get_tensor_for_state(current_state).to(self.torch_device)
@@ -599,13 +625,13 @@ class TrainVanillaDqnV6():
                     u = random()
                     self.epoch_random_action_flag = (u <= self.epsilon)
                 
-                current_q_values = self.get_q_values(self.model, current_tensor)
+                self.epoch_q_values_full = self.get_q_values(self.model, current_tensor)
                 
                 if self.epoch_random_action_flag:
                     self.epoch_action_index = randrange(len(self.action_names))
-                    self.epoch_q_value = current_q_values[self.epoch_action_index].item()
+                    self.epoch_q_value = self.epoch_q_values_full[self.epoch_action_index].item()
                 else:
-                    model_value, model_index = torch.max(current_q_values, dim=0)
+                    model_value, model_index = torch.max(self.epoch_q_values_full, dim=0)
                     self.epoch_action_index = model_index.item()
                     self.epoch_q_value = model_value.item()
                 
@@ -691,7 +717,7 @@ def get_args():
     parser.add_argument("--num_decay_episodes", type=int, default=80000)
     
     parser.add_argument("--replay_memory_init_epsilon", type=float, default=-1.0, help="Epsilon to use while populating replay memory. Use -1 to ignore and use initial_epsilon")
-    parser.add_argument("--initial_epsilon", type=float, default=.75)
+    parser.add_argument("--initial_epsilon", type=float, default=.8)
     parser.add_argument("--final_epsilon", type=float, default=0.001)
     
     # EPOCH based events
