@@ -232,7 +232,7 @@ class Tetris:
         self.board = self.store(self.piece, self.current_pos)
         lines_cleared, self.board = self.check_cleared_rows(self.board)
         old_reward = 1 + (lines_cleared ** 2) * self.width
-        new_reward = 1 + (self.tetrominoes * 0.2) + (lines_cleared ** 2) * self.width
+        new_reward = 2 + (lines_cleared ** 2) * 15
         
         self.tetrominoes += 1
         self.cleared_lines += lines_cleared
@@ -241,7 +241,7 @@ class Tetris:
         
         # The gameover flag is set by new_piece()
         if self.gameover:
-            new_reward -= 10
+            new_reward -= 20
             old_reward -= 2
         
         self.score += old_reward
