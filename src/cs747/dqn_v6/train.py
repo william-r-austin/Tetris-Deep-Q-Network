@@ -681,8 +681,8 @@ def get_args():
     parser.add_argument("--log_file_epoch_freq", type=int, default=10)
     parser.add_argument("--log_csv_epoch_freq", type=int, default=10)
     
-    parser.add_argument("--target_network_update_epoch_freq", type=int, default=500)
-    parser.add_argument("--minibatch_update_epoch_freq", type=int, default=5)
+    parser.add_argument("--target_network_update_epoch_freq", type=int, default=8000)
+    parser.add_argument("--minibatch_update_epoch_freq", type=int, default=4)
     
         
     #parser.add_argument("--save_interval", type=int, default=500)  # This is a number of EPISODES
