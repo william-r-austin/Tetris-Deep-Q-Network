@@ -264,13 +264,16 @@ class TrainVanillaDqnV6():
         Get the info message for the episode.
         '''
         if self.replay_memory_full:
-            info_message = "Training Episode: {}/{}, Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
-                self.episode, self.opt.num_episodes, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
+            info_message = "Training Game. Episode: {}/{}, Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
+                self.episode, self.opt.num_episodes, self.run_time_str, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, 
+                self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
         else:
-            info_message = "Setup Episode: Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
-                self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size)
+            info_message = "Setup Game. Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
+                self.run_time_str, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, 
+                self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size)
         
         return info_message
+
     
     def get_epoch_info_message(self):
         '''
@@ -278,10 +281,10 @@ class TrainVanillaDqnV6():
         '''
         action_type = "EXPLORE" if self.epoch_random_action_flag else "EXPLOIT"
         
-        
-        return "Episode: {}, Epoch: {}, Game ID: {}, Action Count: {}, Loss: {:.6f}, Reward: {}, Tetrominoes {}, Cleared lines: {}, Action Type: {}, Action Name: {}".format(
-            self.episode, self.epoch, self.game_id, self.env.action_count, self.minibatch_update_loss, self.epoch_reward, 
-            self.env.tetrominoes, self.env.cleared_lines, action_type, self.epoch_action_name)
+        return "Epoch: {}, Episode: {}/{}, Game ID: {}, Epsilon: {:.5f}, Action Count: {}, Loss: {:.6f}, Reward: {}, Tetrominoes {}, Cleared lines: {}, Action Type: {}, Action Name: {}".format(
+            self.epoch, self.episode, self.opt.num_episodes, self.game_id, self.epsilon, self.env.action_count, self.minibatch_update_loss, 
+            self.epoch_reward, self.env.tetrominoes, self.env.cleared_lines, action_type, self.epoch_action_name)
+
     
     def get_tensor_for_state(self, board_state):
         '''
@@ -299,10 +302,10 @@ class TrainVanillaDqnV6():
         '''
         batch = self.replay_memory.get_random_weighted_sample(self.opt.minibatch_size)
         state_batch = torch.stack(tuple(sample.begin_tensor for sample in batch)).to(self.torch_device)
-        state_batch.requires_grad = True
+        state_batch.requires_grad = False
         
         next_state_batch = torch.stack(tuple(sample.next_tensor for sample in batch)).to(self.torch_device)
-        next_state_batch.requires_grad = True
+        next_state_batch.requires_grad = False
         
         reward_list = [sample.reward for sample in batch]
         game_active_list = [(0 if sample.final_state_flag else 1) for sample in batch]
@@ -317,12 +320,14 @@ class TrainVanillaDqnV6():
         
         q_values_full = self.model(state_batch).to(self.torch_device)
         q_values = torch.amax(q_values_full, 1).to(self.torch_device)
+        #q_values.requires_grad = True
         
         y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) for reward, game_active_ind, next_q_value in
                   zip(reward_tensor, game_active_tensor, next_q_values))
         
         y_batch_init = torch.cat(y_batch_list).to(self.torch_device)
         y_batch = torch.reshape(y_batch_init, (-1,)).to(self.torch_device)
+        #y_batch.requires_grad = True
     
         self.optimizer.zero_grad()
         loss = self.criterion(q_values, y_batch)
@@ -352,6 +357,9 @@ class TrainVanillaDqnV6():
                                 'model_state_dict': self.model.state_dict(),
                                 'optimizer_state_dict': self.optimizer.state_dict(),
                                 'loss': self.minibatch_update_loss,
+                                'episode': self.episode,
+                                'game_id': self.game_id,
+                                'step_id': self.step_id
                             }
         
         torch.save(model_save_params, model_path)
@@ -453,10 +461,10 @@ class TrainVanillaDqnV6():
         next_q_values = torch.max(next_q_values_full, dim=1).values
         
         for current_q_value, next_q_value, reward, move_result in zip(current_q_values, next_q_values, reward_tensor, all_move_results):
-            move_result.begin_q_value = current_q_value
-            move_result.next_q_value = next_q_value
+            move_result.begin_q_value = current_q_value.item()
+            move_result.next_q_value = next_q_value.item()
             estimate_error = current_q_value - (reward + self.opt.gamma * next_q_value)
-            move_result.weight = abs(estimate_error)
+            move_result.weight = abs(estimate_error.item())
         
         self.replay_memory.reset_weights()
 
@@ -617,8 +625,9 @@ class TrainVanillaDqnV6():
                 self.q_value_error = self.epoch_q_value - self.epoch_target_total
                 self.epoch_weight = abs(self.q_value_error)
                                 
-                current_move_result = TetrisMoveResult(current_state, current_tensor, self.epoch_q_value, self.epoch_action_index, self.epoch_reward, 
-                                                       self.epoch_game_over, next_state, next_tensor, self.epoch_target_q_value, self.epoch_weight)
+                current_move_result = TetrisMoveResult(current_state, current_tensor, self.epoch_q_value, self.epoch_action_index, 
+                                                       self.epoch_action_name, self.epoch_reward, self.epoch_game_over, next_state, 
+                                                       next_tensor, self.epoch_target_q_value, self.epoch_weight, self.epoch)
                 
                 self.replay_memory.insert(current_move_result)
                 game_move_results.append(current_move_result)
@@ -666,8 +675,8 @@ def get_args():
 
     # Parameters for RL    
     parser.add_argument("--source_model_path", type=str, default=None, help="Location of the saved model to load for training (relative to output/ or absolute).")
-    parser.add_argument("--replay_memory_size", type=int, default=16384, help="Number of actions stored in the experience replay memory")
-    parser.add_argument("--minibatch_size", type=int, default=512, help="The number of samples per batch")
+    parser.add_argument("--replay_memory_size", type=int, default=384, help="Number of actions stored in the experience replay memory")
+    parser.add_argument("--minibatch_size", type=int, default=32, help="The number of samples per batch")
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--target_network_momentum", type=float, default=0.999)
@@ -678,8 +687,8 @@ def get_args():
     parser.add_argument("--log_csv_episode_freq", type=int, default=1, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
     parser.add_argument("--save_model_episode_freq", type=int, default=500)
     
-    parser.add_argument("--num_episodes", type=int, default=30000)
-    parser.add_argument("--num_decay_episodes", type=int, default=25000)
+    parser.add_argument("--num_episodes", type=int, default=1000)
+    parser.add_argument("--num_decay_episodes", type=int, default=800)
     
     parser.add_argument("--replay_memory_init_epsilon", type=float, default=-1.0, help="Epsilon to use while populating replay memory. Use -1 to ignore and use initial_epsilon")
     parser.add_argument("--initial_epsilon", type=float, default=.75)
@@ -690,7 +699,7 @@ def get_args():
     parser.add_argument("--log_file_epoch_freq", type=int, default=12)
     parser.add_argument("--log_csv_epoch_freq", type=int, default=-1)
     
-    parser.add_argument("--target_network_update_epoch_freq", type=int, default=8000)
+    parser.add_argument("--target_network_update_epoch_freq", type=int, default=800)
     parser.add_argument("--minibatch_update_epoch_freq", type=int, default=4)
     
         

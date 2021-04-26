@@ -89,16 +89,14 @@ class WeightedReplayMemory(object):
     def reset_weights(self):
         self.total_buffer_weight = 0
         self.global_weight_sum = 0
+        index = 0
         
         for move_result in self.object_buffer:
-            #weight = move_result.weight
+            #print("reset_weights(), index = " + str(index) + ", epoch = " + str(move_result.epoch) + ", global_weight_sum = " + str(self.global_weight_sum))
             move_result.global_weight_sum = self.global_weight_sum
-            
-            #buffer_tuple[1] = weight
-            #buffer_tuple[2] = self.global_weight_sum
-            
             self.total_buffer_weight += move_result.weight
             self.global_weight_sum += move_result.weight
+            index += 1
     
     def insert(self, new_object):
         weight = new_object.weight
