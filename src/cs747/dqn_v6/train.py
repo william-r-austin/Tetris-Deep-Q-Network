@@ -211,7 +211,7 @@ class TrainVanillaDqnV6():
         episode_property_values["Tetrominoes"] = str(self.env.tetrominoes)
         episode_property_values["Action_Count"] = str(self.env.action_count)
         episode_property_values["Cleared_Lines"] = str(self.env.cleared_lines)
-        episode_property_values["Duration"] = "{:.2f}s".format(self.game_time_ms / 1000)
+        episode_property_values["Duration"] = "{:.2f}".format(self.game_time_ms / 1000)
         episode_property_values["Epsilon"] = str(self.epsilon)
         episode_property_values["Replay_Memory_Size"] = str(self.replay_memory.get_size())
         episode_property_values["Replay_Memory_Capacity"] = str(self.opt.replay_memory_size)
@@ -264,10 +264,10 @@ class TrainVanillaDqnV6():
         Get the info message for the episode.
         '''
         if self.replay_memory_full:
-            info_message = "Training Episode: {}/{}, Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.2f}s, Epsilon: {:.4f}".format(
+            info_message = "Training Episode: {}/{}, Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
                 self.episode, self.opt.num_episodes, self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
         else:
-            info_message = "Setup Episode: Game ID: {}, Reward Sum: {}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
+            info_message = "Setup Episode: Game ID: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
                 self.game_id, self.env.discounted_reward, self.env.tetrominoes, self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size)
         
         return info_message
@@ -677,9 +677,9 @@ def get_args():
     parser.add_argument("--final_epsilon", type=float, default=0.001)
     
     # EPOCH based events
-    parser.add_argument("--print_epoch_freq", type=int, default=10)
-    parser.add_argument("--log_file_epoch_freq", type=int, default=10)
-    parser.add_argument("--log_csv_epoch_freq", type=int, default=10)
+    parser.add_argument("--print_epoch_freq", type=int, default=12)
+    parser.add_argument("--log_file_epoch_freq", type=int, default=12)
+    parser.add_argument("--log_csv_epoch_freq", type=int, default=-1)
     
     parser.add_argument("--target_network_update_epoch_freq", type=int, default=8000)
     parser.add_argument("--minibatch_update_epoch_freq", type=int, default=4)
