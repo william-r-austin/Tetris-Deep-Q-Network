@@ -217,7 +217,7 @@ class TrainVanillaDqnV6():
         episode_property_values = {}
         episode_property_values["Replay_Memory_Full"] = str(self.replay_memory_full)
         episode_property_values["Episode_Num"] = str(self.episode)
-        episode_property_values["Total_Episodes"] = str(self.opt.num_episodes)
+        episode_property_values["Total_Episodes"] = str(self.max_episode_num)
         episode_property_values["Game_ID"] = str(self.game_id)
         episode_property_values["Reward_Sum"] = "{:.5f}".format(self.episode_q_value_sum)
         episode_property_values["Tetrominoes"] = str(self.env.tetrominoes)
@@ -249,7 +249,7 @@ class TrainVanillaDqnV6():
         epoch_property_values = {}
         epoch_property_values["Epoch"] = str(self.epoch)
         epoch_property_values["Episode_Num"] = str(self.episode)
-        epoch_property_values["Total_Episodes"] = str(self.opt.num_episodes)
+        epoch_property_values["Total_Episodes"] = str(self.max_episode_num)
         epoch_property_values["Game_ID"] = str(self.game_id)
         epoch_property_values["Epsilon"] = "{:.5f}".format(self.epsilon)
         epoch_property_values["Action_Count"] = str(self.env.action_count)
@@ -296,7 +296,7 @@ class TrainVanillaDqnV6():
         '''
         if self.replay_memory_full:
             info_message = "Training Game. Episode: {}/{}, Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.5f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
-                self.episode, self.opt.num_episodes, self.run_time_str, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, 
+                self.episode, self.max_episode_num, self.run_time_str, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, 
                 self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
         else:
             info_message = "Setup Game. Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.5f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
@@ -313,7 +313,7 @@ class TrainVanillaDqnV6():
         action_type = "EXPLORE" if self.epoch_random_action_flag else "EXPLOIT"
         
         return "Epoch: {}, Episode: {}/{}, Game ID: {}, Epsilon: {:.5f}, Action Count: {}, Loss: {:.5f}, Reward: {}, Tetrominoes {}, Cleared lines: {}, Action Type: {}, Action Name: {}".format(
-            self.epoch, self.episode, self.opt.num_episodes, self.game_id, self.epsilon, self.env.action_count, self.minibatch_update_loss, 
+            self.epoch, self.episode, self.max_episode_num, self.game_id, self.epsilon, self.env.action_count, self.minibatch_update_loss, 
             self.epoch_reward, self.env.tetrominoes, self.env.cleared_lines, action_type, self.epoch_action_name)
 
     
@@ -340,13 +340,15 @@ class TrainVanillaDqnV6():
         
         reward_list = [sample.reward for sample in batch]
         game_active_list = [(0 if sample.final_state_flag else 1) for sample in batch]
+        action_list = [sample.action for sample in batch]
         reward_tensor = torch.tensor(reward_list).to(self.torch_device)
         game_active_tensor = torch.tensor(game_active_list).to(self.torch_device)
-    
-        self.model.eval()
+        action_tensor = torch.tensor(action_list).to(self.torch_device)
+        
         with torch.no_grad():
-            next_q_values_full = self.model(next_state_batch).to(self.torch_device)
+            next_q_values_full = self.target_network(next_state_batch).to(self.torch_device)
             next_q_values = torch.max(next_q_values_full, 1).values
+        
         self.model.train()
         
         q_values_full = self.model(state_batch).to(self.torch_device)
@@ -356,18 +358,24 @@ class TrainVanillaDqnV6():
         y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) for reward, game_active_ind, next_q_value in
                   zip(reward_tensor, game_active_tensor, next_q_values))
         
-        y_batch_init = torch.cat(y_batch_list).to(self.torch_device)
-        y_batch = torch.reshape(y_batch_init, (-1,)).to(self.torch_device)
+        target_q_values = torch.tensor(y_batch_list).to(self.torch_device)
+        
+        y_batch_full = torch.clone(q_values_full).to(self.torch_device)
+        #y_batch_init = torch.cat(y_batch_list).to(self.torch_device)
+        index_tensor = torch.tensor(range(len(batch))).to(self.torch_device)
+        y_batch_full[index_tensor, action_tensor] = target_q_values
+        #y_batch = torch.reshape(y_batch_init, (-1,)).to(self.torch_device)
         #y_batch.requires_grad = True
     
         self.optimizer.zero_grad()
-        loss = self.criterion(q_values, y_batch)
+        loss = self.criterion(q_values_full, y_batch_full)
         loss.backward()
         self.optimizer.step()
         
         self.minibatch_update_loss = loss.item()
         
         self.episode_loss_vals.append(self.minibatch_update_loss)
+        self.model.eval()
     
     def print_run_config(self):
         '''
@@ -418,7 +426,7 @@ class TrainVanillaDqnV6():
             self.model.load_state_dict(checkpoint["model_state_dict"])
             
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            #self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             
             self.game_id = checkpoint["game_id"]
             self.step_id = checkpoint["step_id"]
