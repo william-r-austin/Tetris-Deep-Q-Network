@@ -67,8 +67,14 @@ class TrainVanillaDqnV6():
         if(len(dir_parts) >= 3):
             version = dir_parts[2]
         
-        self.output_directory = os.path.join(parent_path, "output")        
-        run_time_dir = os.path.join(self.output_directory, version, self.run_time_str)
+        self.output_directory = os.path.join(parent_path, "output")
+        
+        run_output_name = self.run_time_str
+        if self.opt.run_tag is not None:
+            formatted_run_tag = self.opt.run_tag.strip().replace(" ", "_").replace("-", "_")
+            run_output_name = self.run_time_str + "_" + formatted_run_tag
+                 
+        run_time_dir = os.path.join(self.output_directory, version, run_output_name)
         
         self.logs_directory = os.path.join(run_time_dir, "logs")
         if not os.path.exists(self.logs_directory):
@@ -163,7 +169,11 @@ class TrainVanillaDqnV6():
         if self.replay_memory_full:
             epsilon_range = self.opt.final_epsilon - self.opt.initial_epsilon
             episode_range = self.opt.num_decay_episodes - 1
-            current_percent = (self.episode - 1) / episode_range
+            
+            # If we loaded an existing model, then the 1 is already added in, because we incremented it before
+            # saving the previous model.
+            episode_offset = self.checkpoint_episode if self.loaded_existing_model else 1
+            current_percent = (self.episode - episode_offset) / episode_range
             
             # Clamp the percent to [0, 1]
             current_percent = max(0, min(1, current_percent))
@@ -285,11 +295,11 @@ class TrainVanillaDqnV6():
         Get the info message for the episode.
         '''
         if self.replay_memory_full:
-            info_message = "Training Game. Episode: {}/{}, Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
+            info_message = "Training Game. Episode: {}/{}, Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.5f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Epsilon: {:.5f}".format(
                 self.episode, self.opt.num_episodes, self.run_time_str, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, 
                 self.env.cleared_lines, self.game_time_ms / 1000, self.epsilon)
         else:
-            info_message = "Setup Game. Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.2f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
+            info_message = "Setup Game. Run ID: {}, Game ID: {}, Actions: {}, Reward Sum: {:.5f}, Tetrominoes: {}, Cleared Lines: {}, Duration: {:.3f}s, Experience Replay Progress: {}/{}".format(
                 self.run_time_str, self.game_id, self.env.action_count, self.episode_q_value_sum, self.env.tetrominoes, 
                 self.env.cleared_lines, self.game_time_ms / 1000, self.replay_memory.get_size(), self.opt.replay_memory_size)
         
@@ -302,7 +312,7 @@ class TrainVanillaDqnV6():
         '''
         action_type = "EXPLORE" if self.epoch_random_action_flag else "EXPLOIT"
         
-        return "Epoch: {}, Episode: {}/{}, Game ID: {}, Epsilon: {:.5f}, Action Count: {}, Loss: {:.6f}, Reward: {}, Tetrominoes {}, Cleared lines: {}, Action Type: {}, Action Name: {}".format(
+        return "Epoch: {}, Episode: {}/{}, Game ID: {}, Epsilon: {:.5f}, Action Count: {}, Loss: {:.5f}, Reward: {}, Tetrominoes {}, Cleared lines: {}, Action Type: {}, Action Name: {}".format(
             self.epoch, self.episode, self.opt.num_episodes, self.game_id, self.epsilon, self.env.action_count, self.minibatch_update_loss, 
             self.epoch_reward, self.env.tetrominoes, self.env.cleared_lines, action_type, self.epoch_action_name)
 
@@ -374,6 +384,9 @@ class TrainVanillaDqnV6():
         print("===============================================\n")
     
     def save_model(self, model_filename):
+        '''
+        Saves the current model so that we can pick it up later to continue training.
+        '''
         model_path = os.path.join(self.models_directory, model_filename + ".tar")
         model_save_params = {
                                 'epoch': self.epoch,
@@ -388,32 +401,63 @@ class TrainVanillaDqnV6():
         torch.save(model_save_params, model_path)
     
     def initialize_model(self):
+        '''
+        Initializes the model, either from an existing model, or creates a new one.
+        '''
         source_model_path = self.opt.source_model_path
         
         if source_model_path is not None:
             if os.path.isabs(source_model_path):
                 load_path = source_model_path
             else:
+                # Use this to specify a path like "dqn_v6/Apr25_232237_full_test/models/tetris_4000_376945.tar"
                 load_path = os.path.join(self.output_directory, self.opt.source_model_path)
             
-            '''
             checkpoint = torch.load(load_path)
             self.model = DeepQNetworkAtariSmall(len(self.action_names))
-            self.model.load_state_dict()
-            '''
-            self.model = torch.load(load_path)
-            self.model.to(self.torch_device)
-            self.model.train()
-        
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            
+            self.game_id = checkpoint["game_id"]
+            self.step_id = checkpoint["step_id"]
+            
+            self.checkpoint_episode = checkpoint["episode"]
+            self.checkpoint_epoch = checkpoint["epoch"] 
+            
+            self.loaded_existing_model = True
+            self.max_episode_num = self.opt.num_episodes + self.checkpoint_episode - 1
+
         else:
             self.model = DeepQNetworkAtariSmall(len(self.action_names)).to(self.torch_device)
             self.model.train()
+            
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
+            
+            self.checkpoint_episode = None
+            self.checkpoint_epoch = None
+            
+            self.loaded_existing_model = False
+            self.max_episode_num = self.opt.num_episodes 
+            
+            # Global Game Count
+            self.game_id = 1
+            
+            # Global Action Count
+            self.step_id = 1
+        
+        
+        # These variables are only used once training starts
+        self.episode = 0       # Count of only Training Games    
+        self.epoch = 0         # Count of Actions on Training Games
         
         self.target_network = DeepQNetworkAtariSmall(len(self.action_names)).to(self.torch_device)
         self.target_network.load_state_dict(copy.deepcopy(self.model.state_dict()))
-        
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
+        self.target_network.eval()
+            
         self.criterion = nn.MSELoss()
+        self.model.train()
         
     
     def initialize_training(self):
@@ -435,23 +479,13 @@ class TrainVanillaDqnV6():
         
         self.env = Tetris(height=self.opt.board_height, width=self.opt.board_width, block_size=self.opt.block_size, gamma=self.opt.gamma)
         self.action_names = self.env.get_action_names()
-        
-        self.initialize_model()
 
         self.replay_memory = WeightedReplayMemory(capacity=self.opt.replay_memory_size)
         self.replay_memory_full = False
-        self.game_time_ms = 0
-        self.epsilon = 1
         
-        # Global Game Count
-        self.game_id = 1
-        # Count of only Training Games
-        self.epoch = 0
+        self.initialize_model()
         
-        # Global Action Count
-        self.step_id = 1
-        # Count of Actions on Training Games
-        self.episode = 0
+
     
     @torch.no_grad()    
     def update_target_network(self):
@@ -570,27 +604,35 @@ class TrainVanillaDqnV6():
         
         if csv_file_flag:
             self.write_episodes_csv_file()
-            
-        
-        # Handle Model Saviing
-        if self.episode > 0 and self.episode % self.opt.save_model_episode_freq == 0:
-            model_filename = "tetris_{}_{}".format(self.episode, self.epoch)
-            self.save_model(model_filename)
+
             
         # If we are training, update the episode. Otherwise, check
         # if the replay buffer is full so we can begin training.
         if not self.replay_memory_full:
             self.replay_memory_full = self.replay_memory.is_full()
+            
+            # Only update this when we've completed filling the replay buffer.
+            if self.replay_memory_full:
+                if self.loaded_existing_model:
+                    self.epoch = self.checkpoint_epoch
+                    self.episode = self.checkpoint_episode
+                else:
+                    self.epoch = 1
+                    self.episode = 1
         
-        if self.replay_memory_full:
-            if self.episode == 0 and self.epoch == 0:
-                # Only update this when we've completed filling the replay buffer.
-                self.epoch = 1
-                
+        else:
             self.episode += 1
         
         # Increment Game ID
         self.game_id += 1
+        
+        # Handle Model Saving
+        # Do this last so that we don't need to fudge the episode/game_id when saving the model
+        # This will also give us a model for episode 0. :)
+        if self.episode > 0 and (self.episode - 1) % self.opt.save_model_episode_freq == 0:
+            model_filename = "tetris_{}_{}".format(self.episode, self.epoch)
+            self.save_model(model_filename)
+        
     
     def train(self):
         '''
@@ -600,13 +642,15 @@ class TrainVanillaDqnV6():
         # Set up all the variables that we need for training
         self.initialize_training()
         
-        while self.episode <= self.opt.num_episodes:
+        while self.episode <= self.max_episode_num:
             # Tell the environment to start a new game
             self.env.reset()
+            
             
             #print("Starting new Tetris game. Game ID: {}".format(self.game_id))
             self.epoch_game_over = False
             self.episode_loss_vals = []
+            self.game_time_ms = 0
             
             game_move_results = []
             self.set_epsilon_for_episode()
@@ -706,6 +750,8 @@ def get_args():
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--target_network_momentum", type=float, default=0.999)
+    parser.add_argument("--run_tag", type=str, default=None, help="Short tag to describe run. It's appended to output directory name.")
+    parser.add_argument("--run_description", type=str, default=None, help="Long description to describe purpose and details of run.")
 
     # EPISODE based events
     parser.add_argument("--print_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
