@@ -232,7 +232,7 @@ class Tetris:
         self.board = self.store(self.piece, self.current_pos)
         lines_cleared, self.board = self.check_cleared_rows(self.board)
         old_reward = 1 + (lines_cleared ** 2) * self.width
-        new_reward = 3.5 + (lines_cleared ** 2) * 15
+        new_reward = 6 + (lines_cleared ** 2) * 15
         
         self.tetrominoes += 1
         self.cleared_lines += lines_cleared
@@ -253,7 +253,7 @@ class Tetris:
     """
     def executeMove(self, next_pos, next_piece, is_down_move):
         move_collision = self.check_collision(next_piece, next_pos)
-        result_map = {"reward": -0.05, "gameover": self.gameover, "finalized": False, "score_delta": 0}
+        result_map = {"reward": -0.001, "gameover": self.gameover, "finalized": False, "score_delta": 0}
 
         if is_down_move:
             self.sideways_moves_count = 0
