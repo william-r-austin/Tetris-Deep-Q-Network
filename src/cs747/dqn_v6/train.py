@@ -534,6 +534,20 @@ class TrainVanillaDqnV6():
         self.replay_memory.reset_weights()
 
     
+    def is_epoch_event_active(self, epoch_freq):
+        '''
+        Determine whether an episode logging / writing event should be performed.
+        '''
+        is_active = False
+        
+        if epoch_freq == 0:
+            is_active = True
+        else:
+            if epoch_freq > 0 and self.epoch > 0 and self.epoch % epoch_freq == 0:
+                is_active = True
+        
+        return is_active
+    
     def step_finished(self):
         '''
         Function to handle all processing that occurs when a STEP is completed
@@ -541,8 +555,9 @@ class TrainVanillaDqnV6():
         
         if self.replay_memory_full:
             # Do a mini-batch
-            if self.epoch % self.opt.minibatch_update_epoch_freq == 0:
-                
+            minibatch_flag = self.is_epoch_event_active(self.opt.minibatch_update_epoch_freq)
+            
+            if minibatch_flag:
                 epoch_loss_vals = []
                 for _ in range(self.opt.minibatch_count_per_update):
                     self.episode_loss_vals.append(self.minibatch_update_loss)
@@ -553,13 +568,15 @@ class TrainVanillaDqnV6():
                 self.minibatch_update_loss = statistics.mean(epoch_loss_vals)
             
             # Target Network Update
-            if self.epoch % self.opt.target_network_update_epoch_freq == 0:
+            target_network_update_flag = self.is_epoch_event_active(self.opt.target_network_update_epoch_freq)
+            
+            if target_network_update_flag:
                 self.update_target_network()
                 self.refresh_replay_memory()
             
             # Logging / Printing
-            print_flag = self.epoch % self.opt.print_epoch_freq == 0
-            log_flag = self.epoch % self.opt.log_file_epoch_freq == 0
+            print_flag = self.is_epoch_event_active(self.opt.print_epoch_freq)
+            log_flag = self.is_epoch_event_active(self.opt.log_file_epoch_freq)
             
             if print_flag or log_flag:
                 epoch_info_message = self.get_epoch_info_message()
