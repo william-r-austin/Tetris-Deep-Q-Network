@@ -372,10 +372,10 @@ class TrainVanillaDqnV6():
         loss.backward()
         self.optimizer.step()
         
-        self.minibatch_update_loss = loss.item()
-        
-        self.episode_loss_vals.append(self.minibatch_update_loss)
         self.model.eval()
+        return loss.item()
+        
+        
     
     def print_run_config(self):
         '''
@@ -542,7 +542,15 @@ class TrainVanillaDqnV6():
         if self.replay_memory_full:
             # Do a mini-batch
             if self.epoch % self.opt.minibatch_update_epoch_freq == 0:
-                self.do_minibatch_update()
+                
+                epoch_loss_vals = []
+                for _ in range(self.opt.minibatch_count_per_update):
+                    self.episode_loss_vals.append(self.minibatch_update_loss)
+                    loss_amount = self.do_minibatch_update()
+                    epoch_loss_vals.append(loss_amount)
+                    self.episode_loss_vals.append(loss_amount)
+                    
+                self.minibatch_update_loss = statistics.mean(epoch_loss_vals)
             
             # Target Network Update
             if self.epoch % self.opt.target_network_update_epoch_freq == 0:
@@ -583,7 +591,7 @@ class TrainVanillaDqnV6():
         if episode_freq == 0:
             is_active = True
         else:
-            if episode_freq > 0 and self.episode % episode_freq == 0:
+            if episode_freq > 0 and self.episode > 0 and self.episode % episode_freq == 0:
                 is_active = True
         
         return is_active
@@ -764,7 +772,7 @@ def get_args():
     # EPISODE based events
     parser.add_argument("--print_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
     parser.add_argument("--log_file_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
-    parser.add_argument("--log_csv_episode_freq", type=int, default=1, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
+    parser.add_argument("--log_csv_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")
     parser.add_argument("--save_model_episode_freq", type=int, default=2000)
     
     parser.add_argument("--num_episodes", type=int, default=100000)
@@ -781,6 +789,7 @@ def get_args():
     
     parser.add_argument("--target_network_update_epoch_freq", type=int, default=12000)
     parser.add_argument("--minibatch_update_epoch_freq", type=int, default=4)
+    parser.add_argument("--minibatch_count_per_update", type=int, default=1)
     
         
     #parser.add_argument("--save_interval", type=int, default=500)  # This is a number of EPISODES
