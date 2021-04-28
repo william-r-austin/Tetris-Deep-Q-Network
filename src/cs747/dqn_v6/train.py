@@ -646,7 +646,7 @@ class TrainVanillaDqnV6():
         # Do this last so that we don't need to fudge the episode/game_id when saving the model
         # This will also give us a model for episode 0. :)
         if self.episode > 0 and (self.episode - 1) % self.opt.save_model_episode_freq == 0:
-            model_filename = "tetris_{}_{}".format(self.episode, self.epoch)
+            model_filename = "tetris_{}_{}".format(self.episode - 1, self.epoch - 1)
             self.save_model(model_filename)
         
     
