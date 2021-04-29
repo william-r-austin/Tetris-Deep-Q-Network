@@ -15,6 +15,7 @@ import time
 
 from cs747.dqn_v6.dqn_model import DeepQNetworkAtariSmall
 from cs747.dqn_v6.experience_replay import WeightedReplayMemory
+from cs747.dqn_v6.resnet import Network as ResNet
 from cs747.dqn_v6.tetris import Tetris
 from cs747.dqn_v6.tetris_move_result import TetrisMoveResult
 
@@ -268,7 +269,7 @@ class TrainVanillaDqnV6():
         epoch_property_values["Move_Down_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[2].item())
         epoch_property_values["Drop_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[3].item())
         epoch_property_values["Rotate_Clockwise_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[4].item())
-        epoch_property_values["Rotate_Counterclockwise_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[5].item())
+        # epoch_property_values["Rotate_Counterclockwise_Q_Value"] = "{:.5f}".format(self.epoch_q_values_full[5].item())
 
         # Flush the file so the output gets written in case the program is terminated.
         if not self.epochs_file_header_added:
@@ -438,7 +439,24 @@ class TrainVanillaDqnV6():
             self.max_episode_num = self.opt.num_episodes + self.checkpoint_episode - 1
 
         else:
-            self.model = DeepQNetworkAtariSmall(len(self.action_names)).to(self.torch_device)
+            if self.opt.use_resnet:
+                self.model = ResNet({
+                    'input_shape': (1, 1, self.env.height, self.env.width),
+                    'n_classes': len(self.action_names),
+                    'base_channels': 16,
+                    'block_type': 'basic',
+                    'depth': 110
+                }).to(self.torch_device)
+                self.target_network = ResNet({
+                    'input_shape': (1, 1, self.env.height, self.env.width),
+                    'n_classes': len(self.action_names),
+                    'base_channels': 16,
+                    'block_type': 'basic',
+                    'depth': 110
+                }).to(self.torch_device)
+            else:
+                self.model = DeepQNetworkAtariSmall(len(self.action_names)).to(self.torch_device)
+                self.target_network = DeepQNetworkAtariSmall(len(self.action_names)).to(self.torch_device)
             self.model.train()
             
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
@@ -460,7 +478,6 @@ class TrainVanillaDqnV6():
         self.episode = 0       # Count of only Training Games    
         self.epoch = 0         # Count of Actions on Training Games
         
-        self.target_network = DeepQNetworkAtariSmall(len(self.action_names)).to(self.torch_device)
         self.target_network.load_state_dict(copy.deepcopy(self.model.state_dict()))
         self.target_network.eval()
             
@@ -485,7 +502,7 @@ class TrainVanillaDqnV6():
         
         self.write_run_options_file()
         
-        self.env = Tetris(height=self.opt.board_height, width=self.opt.board_width, block_size=self.opt.block_size, gamma=self.opt.gamma)
+        self.env = Tetris(height=self.opt.board_height, render_flag=self.opt.render_graphics, width=self.opt.board_width, block_size=self.opt.block_size, gamma=self.opt.gamma)
         self.action_names = self.env.get_action_names()
 
         self.replay_memory = WeightedReplayMemory(capacity=self.opt.replay_memory_size)
@@ -775,8 +792,10 @@ def get_args():
     parser.add_argument("--board_width", type=int, default=10, help="The tetris board width")
     parser.add_argument("--board_height", type=int, default=20, help="The tetris board height")
     parser.add_argument("--block_size", type=int, default=30, help="Size of a block")
+    parser.add_argument("--render-graphics", dest='render_graphics', action='store_true', help="Show graphics during training.")
+    parser.set_defaults(render_graphics=False)
 
-    # Parameters for RL    
+    # Parameters for RL
     parser.add_argument("--source_model_path", type=str, default=None, help="Location of the saved model to load for training (relative to output/ or absolute).")
     parser.add_argument("--replay_memory_size", type=int, default=16384, help="Number of actions stored in the experience replay memory")
     parser.add_argument("--minibatch_size", type=int, default=512, help="The number of samples per batch")
@@ -785,6 +804,8 @@ def get_args():
     parser.add_argument("--target_network_momentum", type=float, default=0.999)
     parser.add_argument("--run_tag", type=str, default=None, help="Short tag to describe run. It's appended to output directory name.")
     parser.add_argument("--run_description", type=str, default=None, help="Long description to describe purpose and details of run.")
+    parser.add_argument("--use-resnet", dest='use_resnet', action='store_true', help="Use ResNet when this option is present.")
+    parser.set_defaults(use_resnet=False)
 
     # EPISODE based events
     parser.add_argument("--print_episode_freq", type=int, default=0, help="Negative for Never. Zero for always (and setup). Positive for episode multiples")

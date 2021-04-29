@@ -69,7 +69,8 @@ class Tetris:
                         "MOVE_DOWN": lambda: self.moveDown(), 
                         "DROP": lambda: self.drop(), 
                         "ROTATE_CLOCKWISE": lambda: self.rotate_clockwise(), 
-                        "ROTATE_COUNTERCLOCKWISE": lambda: self.rotate_counter_clockwise()}
+                        # "ROTATE_COUNTERCLOCKWISE": lambda: self.rotate_counter_clockwise()
+        }
         
         self.action_names = list(self.actions.keys())
 
