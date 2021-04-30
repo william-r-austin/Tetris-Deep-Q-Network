@@ -31,7 +31,8 @@ def to_dqn_84x84(tetris_board):
     #print("Frame tensor shape")
     #print(frame_tensor.size())
     
-    board_tensor = torch.stack([frame_tensor, frame_tensor, frame_tensor, frame_tensor])
+    # board_tensor = torch.stack([frame_tensor, frame_tensor, frame_tensor, frame_tensor])
+    board_tensor = torch.stack((frame_tensor,))
     #.permute(1, 2, 0)
     return board_tensor
             
