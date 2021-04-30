@@ -422,7 +422,7 @@ class TrainVanillaDqnV6():
                 # Use this to specify a path like "dqn_v6/Apr25_232237_full_test/models/tetris_4000_376945.tar"
                 load_path = os.path.join(self.output_directory, self.opt.source_model_path)
             
-            checkpoint = torch.load(load_path)
+            checkpoint = torch.load(load_path, map_location=self.torch_device)
             self.model = DeepQNetworkAtariSmall(len(self.action_names))
             self.model.load_state_dict(checkpoint["model_state_dict"])
             
