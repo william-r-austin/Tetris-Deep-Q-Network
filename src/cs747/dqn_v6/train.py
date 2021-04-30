@@ -355,8 +355,9 @@ class TrainVanillaDqnV6():
         #q_values = torch.amax(q_values_full, 1).to(self.torch_device)
         #q_values.requires_grad = True
         
-        y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) for reward, game_active_ind, next_q_value in
-                  zip(reward_tensor, game_active_tensor, next_q_values))
+        y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) 
+                             for reward, game_active_ind, next_q_value 
+                             in zip(reward_tensor, game_active_tensor, next_q_values))
         
         target_q_values = torch.tensor(y_batch_list).to(self.torch_device)
         
