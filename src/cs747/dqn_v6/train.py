@@ -351,7 +351,7 @@ class TrainVanillaDqnV6():
         
         self.model.train()
         
-        q_values_full = self.model(state_batch).to(self.torch_device)
+        q_values_full = self.model(state_batch).detach().to(self.torch_device)
         q_values = torch.amax(q_values_full, 1).to(self.torch_device)
         #q_values.requires_grad = True
         

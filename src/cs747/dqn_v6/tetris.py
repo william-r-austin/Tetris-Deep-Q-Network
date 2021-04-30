@@ -241,7 +241,7 @@ class Tetris:
         
         # The gameover flag is set by new_piece()
         if self.gameover:
-            new_reward -= 20
+            new_reward -= 5
             old_reward -= 2
         
         self.score += old_reward
@@ -253,7 +253,7 @@ class Tetris:
     """
     def executeMove(self, next_pos, next_piece, is_down_move):
         move_collision = self.check_collision(next_piece, next_pos)
-        result_map = {"reward": -0.001, "gameover": self.gameover, "finalized": False, "score_delta": 0}
+        result_map = {"reward": 0, "gameover": self.gameover, "finalized": False, "score_delta": 0}
 
         if is_down_move:
             self.sideways_moves_count = 0
