@@ -351,8 +351,8 @@ class TrainVanillaDqnV6():
         
         self.model.train()
         
-        q_values_full = self.model(state_batch).detach().to(self.torch_device)
-        q_values = torch.amax(q_values_full, 1).to(self.torch_device)
+        q_values_full = self.model(state_batch).to(self.torch_device)
+        #q_values = torch.amax(q_values_full, 1).to(self.torch_device)
         #q_values.requires_grad = True
         
         y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) for reward, game_active_ind, next_q_value in
@@ -360,7 +360,7 @@ class TrainVanillaDqnV6():
         
         target_q_values = torch.tensor(y_batch_list).to(self.torch_device)
         
-        y_batch_full = torch.clone(q_values_full).to(self.torch_device)
+        y_batch_full = torch.clone(q_values_full).detach().to(self.torch_device)
         #y_batch_init = torch.cat(y_batch_list).to(self.torch_device)
         index_tensor = torch.tensor(range(len(batch))).to(self.torch_device)
         y_batch_full[index_tensor, action_tensor] = target_q_values
