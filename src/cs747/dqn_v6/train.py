@@ -372,7 +372,11 @@ class TrainVanillaDqnV6():
         loss = self.criterion(q_values_full, y_batch_full)
         loss.backward()
         
-        torch.nn.utils.clip_grad_value_(self.model.parameters(), self.opt.clip_value)
+        if self.opt.clip_value > 0:
+            torch.nn.utils.clip_grad_value_(self.model.parameters(), self.opt.clip_value)
+        elif self.opt.clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.clip_norm)
+            
         self.optimizer.step()
         
         self.model.eval()
@@ -833,7 +837,8 @@ def get_args():
     parser.add_argument("--minibatch_update_epoch_freq", type=int, default=4)
     parser.add_argument("--minibatch_count_per_update", type=int, default=1)
     
-    parser.add_argument("--clip_value", type=float, default=1.0)
+    parser.add_argument("--clip_value", type=float, default=-1.0)
+    parser.add_argument("--clip_norm", type=float, default=-1.0)
         
     #parser.add_argument("--save_interval", type=int, default=500)  # This is a number of EPISODES
     
