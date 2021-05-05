@@ -12,6 +12,7 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
+import numpy as np
 
 from cs747.dqn_v6.dqn_model import DeepQNetworkAtariSmall
 from cs747.dqn_v6.experience_replay import ReplayMemory
@@ -39,7 +40,7 @@ if __name__ == "__main__":
     action_names = env.get_action_names()
     torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    model_dict = torch.load("{}".format(run_options.load_path))
+    model_dict = torch.load("{}".format(run_options.load_path), map_location=torch_device)
     model = None
     if run_options.use_resnet:
         model = ResNet({
@@ -61,10 +62,17 @@ if __name__ == "__main__":
         
         while not env.gameover:
             board = env.get_current_board_state()
-            current_state = format_util.to_dqn_84x84(board)
+            if run_options.use_resnet:
+                current_state = format_util.to_dqn_84x84(board)
+                input_tensor = torch.unsqueeze(current_state, 0).to(torch_device)
+            else:
+                numpy_arr = np.array(board, dtype=np.float32)
+                clipped_numpy_arr = np.clip(numpy_arr, -1, 1)
+                board_tensor = torch.from_numpy(clipped_numpy_arr).to(torch_device)
+                board_tensor2 = torch.unsqueeze(board_tensor, 0).to(torch_device)
+                input_tensor = torch.unsqueeze(board_tensor2, 0).to(torch_device)
             
             with torch.no_grad():
-                input_tensor = torch.unsqueeze(current_state, 0).to(torch_device)
                 predictions = model(input_tensor)
                 action_index = torch.argmax(predictions)
                 env.do_action_by_id(action_index)
