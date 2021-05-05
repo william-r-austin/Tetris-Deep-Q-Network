@@ -353,7 +353,7 @@ class TrainVanillaDqnV6():
         self.model.train()
         
         q_values_full = self.model(state_batch).to(self.torch_device)
-        q_values = torch.amax(q_values_full, 1).to(self.torch_device)
+        #q_values = torch.amax(q_values_full, 1).to(self.torch_device)
         #q_values.requires_grad = True
         
         y_batch_list = tuple(torch.unsqueeze(reward + game_active_ind * self.opt.gamma * next_q_value, 0) for reward, game_active_ind, next_q_value in
@@ -585,7 +585,6 @@ class TrainVanillaDqnV6():
             if minibatch_flag:
                 epoch_loss_vals = []
                 for _ in range(self.opt.minibatch_count_per_update):
-                    self.episode_loss_vals.append(self.minibatch_update_loss)
                     loss_amount = self.do_minibatch_update()
                     epoch_loss_vals.append(loss_amount)
                     self.episode_loss_vals.append(loss_amount)
