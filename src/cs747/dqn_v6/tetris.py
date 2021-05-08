@@ -7,6 +7,8 @@ import cv2
 from matplotlib import style
 import random
 
+import torch
+
 style.use("ggplot")
 
 class Tetris:
@@ -48,8 +50,12 @@ class Tetris:
     max_sideways_moves = 8
 
     def __init__(self, height=20, width=10, render_flag=False, block_size=30, gamma=0.99):
+        self.torch_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
         self.height = height
         self.width = width
+        self.cleared_row_tensor = torch.ones(self.width).to(self.torch_device)
+        self.new_append_row_tensor = torch.unsqueeze(torch.zeros(self.width).to(self.torch_device), 0)
         self.render_flag = render_flag
         self.gamma = gamma
         
@@ -78,7 +84,7 @@ class Tetris:
         return self.action_names
 
     def reset(self):
-        self.board = [[0] * self.width for _ in range(self.height)]
+        self.board = torch.tensor([[0] * self.width for _ in range(self.height)]).to(self.torch_device)
         #self.discounted_reward = 0.0
         self.score = 0
         self.tetrominoes = 0
@@ -117,7 +123,7 @@ class Tetris:
         return rotated_array
    
     def get_current_board_state(self):
-        board = [x[:] for x in self.board]
+        board = self.board.clone().to(self.torch_device)
         for y in range(len(self.piece)):
             for x in range(len(self.piece[y])):
                 board[y + self.current_pos["y"]][x + self.current_pos["x"]] = -1 * self.piece[y][x]
@@ -151,7 +157,7 @@ class Tetris:
         return False
 
     def store(self, piece, pos):
-        board = [x[:] for x in self.board]
+        board = self.board.clone().to(self.torch_device)
         for y in range(len(piece)):
             for x in range(len(piece[y])):
                 if piece[y][x] and not board[y + pos["y"]][x + pos["x"]]:
@@ -159,13 +165,13 @@ class Tetris:
         return board
 
     def check_cleared_rows(self, board):
-        to_delete = []
-        for i, row in enumerate(board[::-1]):
-            if 0 not in row:
-                to_delete.append(len(board) - 1 - i)
-        if len(to_delete) > 0:
-            board = self.remove_row(board, to_delete)
-        return len(to_delete), board
+        mask = torch.as_tensor([0 in row for row in board]).to(self.torch_device)
+        board = board[mask]
+        num_cleared_rows = 0
+        while len(board) < self.height:
+            board = torch.cat((self.new_append_row_tensor, board))
+            num_cleared_rows += 1
+        return num_cleared_rows, board
 
     def remove_row(self, board, indices):
         for i in indices[::-1]:

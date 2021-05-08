@@ -714,7 +714,8 @@ class TrainVanillaDqnV6():
             self.episode_replay_memory_start_size = self.replay_memory.get_size()
             
             current_state = self.env.get_current_board_state()
-            current_tensor = self.get_tensor_for_state(current_state).to(self.torch_device)
+            current_tensor = torch.unsqueeze(current_state, 0).to(self.torch_device)
+            current_tensor = current_tensor.type(torch.float32)
             
             start_time_ms = self.get_current_time_ms()
             
@@ -742,7 +743,8 @@ class TrainVanillaDqnV6():
                 self.epoch_reward = action_result_map["reward"]
                 
                 next_state = self.env.get_current_board_state()
-                next_tensor = self.get_tensor_for_state(next_state).to(self.torch_device)
+                next_tensor = torch.unsqueeze(next_state, 0).to(self.torch_device)
+                next_tensor = next_tensor.type(torch.float32)
                 
                 # Use the target network estimate: r + gamma * max:a_next [Q_target(s_next, a_next)] 
                 # Compare to the DQN estimate for Q(s, a)   
